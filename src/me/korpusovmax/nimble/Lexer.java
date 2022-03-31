@@ -28,30 +28,30 @@ public class Lexer {
 
         while (currentChar != 0) {
             if (";\n".contains(Character.toString(currentChar))) {
-                tokens.add(new Token(TypeToken.NEWLINE, pos));
+                tokens.add(new Token(TypeToken.NEWLINE, pos.copy()));
                 advance();
             } else if ("\t\r ".contains(Character.toString(currentChar))) {
                 advance();
             } else if (currentChar == '+') {
-                tokens.add(new Token(TypeToken.PLUS, pos));
+                tokens.add(new Token(TypeToken.PLUS, pos.copy()));
                 advance();
             } else if (currentChar == '-') {
-                tokens.add(new Token(TypeToken.MINUS, pos));
+                tokens.add(new Token(TypeToken.MINUS, pos.copy()));
                 advance();
             } else if (currentChar == '/') {
-                tokens.add(new Token(TypeToken.DIV, pos));
+                tokens.add(new Token(TypeToken.DIV, pos.copy()));
                 advance();
             } else if (currentChar == '*') {
-                tokens.add(new Token(TypeToken.MUL, pos));
+                tokens.add(new Token(TypeToken.MUL, pos.copy()));
                 advance();
             } else if (currentChar == '^') {
-                tokens.add(new Token(TypeToken.POW, pos));
+                tokens.add(new Token(TypeToken.POW, pos.copy()));
                 advance();
             } else if (currentChar == '(') {
-                tokens.add(new Token(TypeToken.LPAREN, pos));
+                tokens.add(new Token(TypeToken.LPAREN, pos.copy()));
                 advance();
             } else if (currentChar == ')') {
-                tokens.add(new Token(TypeToken.RPAREN, pos));
+                tokens.add(new Token(TypeToken.RPAREN, pos.copy()));
                 advance();
             } else if ("0123456789".contains(String.valueOf(currentChar)) || currentChar == '.') {
                 tokens.add(_number());
@@ -61,10 +61,10 @@ public class Lexer {
                 Position posStart = pos.copy();
                 char ch = currentChar;
                 advance();
-                return Either.error(new Errors.IllegalCharError(posStart, pos, "'" + ch + "'"));
+                return Either.error(new Errors.IllegalCharError(posStart, pos.copy(), "'" + ch + "'"));
             }
         }
-        tokens.add(new Token(TypeToken.EOF, pos));
+        tokens.add(new Token(TypeToken.EOF, pos.copy()));
         return Either.success(tokens);
     }
 
@@ -83,9 +83,9 @@ public class Lexer {
             advance();
         }
         if (dot == 1) {
-            return new Token(TypeToken.FLOAT, num, posStart, pos);
+            return new Token(TypeToken.FLOAT, num, posStart, pos.copy());
         } else {
-            return new Token(TypeToken.INT, num, posStart, pos);
+            return new Token(TypeToken.INT, num, posStart, pos.copy());
         }
     }
     public Token _string() {

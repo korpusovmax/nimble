@@ -11,13 +11,17 @@ public class Interpreter {
         return Either.error(new Errors.RuntimeError(nodeToVisit.getPosEnd(), nodeToVisit.getPosEnd(), "no such node:(\n" + nodeToVisit.getClass().getSimpleName()));
     }
 
-    public Either visitNumberNode(Nodes.NumberNode node) {
+    public Either visitAtomNode(Nodes.AtomNode node) {
         if (node.token.type == TypeToken.INT) {
             Values.Integer value = new Values.Integer(Integer.parseInt(node.token.value));
             value.setPos(node.getPosStart(), node.getPosEnd());
             return Either.success(value);
-        } else {
+        } else if (node.token.type == TypeToken.FLOAT){
             Values.Float value = new Values.Float((float) Double.parseDouble(node.token.value));
+            value.setPos(node.getPosStart(), node.getPosEnd());
+            return Either.success(value);
+        } else {
+            Values.String value = new Values.String((node.token.value).toString());
             value.setPos(node.getPosStart(), node.getPosEnd());
             return Either.success(value);
         }

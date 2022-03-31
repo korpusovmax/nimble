@@ -25,6 +25,9 @@ public class Token {
         }
     }
 
+    public Token copy() {
+        return new Token(type, value, posStart.copy(), posEnd.copy());
+    }
     public String toString () {
         return type.name;
     }

@@ -1,9 +1,9 @@
 package me.korpusovmax.nimble;
 
 public class Nodes {
-    public static class NumberNode extends Node {
+    public static class AtomNode extends Node {
         public Token token;
-        public NumberNode (Token tok) {
+        public AtomNode(Token tok) {
             token = tok;
             posStart = token.posStart;
             posEnd = token.posEnd;

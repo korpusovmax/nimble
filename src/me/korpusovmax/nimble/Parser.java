@@ -1,8 +1,6 @@
 package me.korpusovmax.nimble;
 
 import java.util.ArrayList;
-import java.util.Currency;
-import java.util.function.UnaryOperator;
 
 public class Parser {
     private ArrayList<Token> tokens;
@@ -108,11 +106,12 @@ public class Parser {
     }
     public ParseResult _atom() {
         ParseResult res = new ParseResult();
-        if (currentToken.type == TypeToken.INT || currentToken.type == TypeToken.FLOAT) {
-            Token token = currentToken;
+        TypeToken type = currentToken.type;
+        if (type == TypeToken.INT || type == TypeToken.FLOAT || type == TypeToken.STRING) {
+            Token token = currentToken.copy();
             res.registerAdvancement();
             advance();
-            res.state = Either.success(new Nodes.NumberNode(token));
+            res.state = Either.success(new Nodes.AtomNode(token));
             return res;
         }
         res.state = Either.error(new Errors.InvalidSyntax(currentToken.posStart, currentToken.posEnd, "unexpected " + currentToken.type));

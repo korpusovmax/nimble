@@ -35,7 +35,7 @@ public class Error {
             }
             sb.append(' ');
         }
-        if (from < posStart.ftxt.length() && to < posStart.ftxt.length()) {
+        if (from < to && to <= posStart.ftxt.length()) {
             return posStart.ftxt.substring(from, to) + "\n" + sb;
         }
         return "";

@@ -1,0 +1,3354 @@
+//NIMBLE LANGUAGE
+//version: A16 - classes, web translation
+//telegram @maxcrocus
+
+//CONSTANTS
+String DIGITS = "0123456789";
+
+//ERRORS
+public class Error {
+	private Context context;
+	private String error_name, error_details;
+	private Position pos_start, pos_end;
+	private Boolean c;
+
+	public Error(Position pos_start, Position pos_end, String error_name, String error_details) {
+		this.error_name = error_name;
+		this.error_details = error_details;
+		this.pos_start = pos_start;
+		this.pos_end = pos_	end;
+		c = false;
+	}
+	public Error(Position pos_start, Position pos_end, String error_name, String error_details, Context context) {
+		this.error_name = error_name;
+		this.error_details = error_details;
+		this.pos_start = pos_start;
+		this.pos_end = pos_end;
+		this.context = context;
+		c = true;
+	}
+
+	public String toString() {
+		String res = this.error_name + ": " + this.error_details + "\n"+ "line " + (this.pos_start.ln+1);
+		//_arrows(this.pos_start.ftxt, this.pos_start.idx, this.pos_end.idx);
+		if(c) {
+			res = this.generate_traceback();
+			res = res + this.error_name + ": " + this.error_details;
+		}
+		return res + "\n";
+	}
+	public String generate_traceback() {
+		String result = "";
+		Position pos = this.pos_start;
+		Context ctx = this.context;
+		while(ctx.have_parent()) {
+			result = "line " + (pos.ln+1) + ", in " + ctx.display_name + "\n" + result;
+			pos = ctx.parent_entry_pos;
+			ctx = ctx.parent;
+		}
+		result = "line " + (pos.ln+1) + ", in " + ctx.display_name + "\n" + result;
+		return "\nTraceback (most recent call last):\n" + result;
+	}
+}
+
+public Object IllegalCharError(Position pos_start, Position pos_end, String details) {
+	Error error = new Error(pos_start, pos_end, "Illegal Character", details);
+	return error;
+}
+public Object ExpectedCharError(Position pos_start, Position pos_end, String details) {
+	Error error = new Error(pos_start, pos_end, "Expected Character", details);
+	return error;
+}
+public Object InvalidSyntaxError(Position pos_start, Position pos_end, String details) {
+	Error error = new Error(pos_start, pos_end, "Invalid Syntax", details);
+	return error;
+}
+public Object RTError(Position pos_start, Position pos_end, String details, Context context) {
+	Error error = new Error(pos_start, pos_end, "Runtime Error", details, context);
+	return error;
+}
+
+//POSITION
+public class Position {
+	private int idx, ln, col;
+	private String ftxt;
+
+	public Position(int idx, int ln, int col, String ftxt) {
+		this.idx = idx;
+		this.ln = ln;
+		this.col = col;
+		this.ftxt = ftxt;
+	}
+
+	public Position advance(char... current_char) {
+		this.idx++;
+		this.col++;
+
+		if (current_char.length > 0 && current_char[0] == '\n') {
+			this.ln++;
+			this.col = 0;
+		}
+
+		return this;
+	}
+
+	public Position copy() {
+		return new Position(this.idx, this.ln, this.col, this.ftxt);
+	}
+}
+
+//TOKEN TYPES
+final String TT_INT = "INT";
+final String TT_DOUBLE = "DOUBLE";
+final String TT_STRING = "STRING";
+final String TT_IDENTIFIER = "IDENTIFIER";
+final String TT_KEYWORD = "KEYWORD";
+final String TT_PLUS = "PLUS"; // +
+final String TT_MINUS = "MINUS"; // -
+final String TT_DIV = "DIV"; // /
+final String TT_MUL = "MUL"; // *
+final String TT_POW = "POW"; // **
+final String TT_EQ = "EQ"; // =
+final String TT_PE = "PE"; // +=
+final String TT_ME = "ME"; // -=
+final String TT_LPAREN = "LPAREN"; // (
+final String TT_RPAREN = "RPAREN"; // )
+final String TT_LBRACE = "LBRACE"; // {
+final String TT_RBRACE = "RBRACE"; // }
+final String TT_LSQUARE = "LSQUARE"; // [
+final String TT_RSQUARE = "RSQUARE"; // ]
+final String TT_COMA = "COMA"; // ,
+final String TT_DOT = "DOT"; //.
+final String TT_ARROW = "ARROW"; // ->
+final String TT_AND = "AND"; // &&
+final String TT_OR = "OR"; // ||
+final String TT_NOT = "NOT"; // !
+final String TT_EE = "EE"; // ==
+final String TT_NE = "NE"; // !=
+final String TT_LT = "LT"; // <
+final String TT_GT = "GT"; // >
+final String TT_LTE = "LTE"; // <=
+final String TT_GTE = "GTE"; // >=
+final String TT_NEWLINE = "NEWLINE";
+final String TT_EOF = "EOF";
+
+ArrayList<String> keys = new ArrayList<String>();
+
+public class Token {
+	public String type;
+	public Object value;
+	public Position pos_start, pos_end;
+
+	public Token(String type, Object value, Position... i) {
+		this.type = type;
+		this.value = value;
+		if (i.length > 0) {
+			this.pos_start = i[0].copy();
+			this.pos_end = pos_start.copy();
+			this.pos_end.advance();
+		}
+		if (i.length > 1) {
+			this.pos_end = i[1]; //with out coping
+		}
+	}
+
+	public Token(String type, Position... i) {
+		this.type = type;
+		if (i.length > 0) {
+			this.pos_start = i[0].copy();
+			this.pos_end = pos_start.copy();
+			this.pos_end.advance();
+		}
+		if (i.length > 1) {
+			this.pos_end = i[1]; //with out coping
+		}
+	}
+
+	public Boolean matches(String type_, Object value) {
+		if(this.type == type_ && this.value.equals(value)) {
+			return true;
+		} else {return false;}
+	}
+
+	public String toString() {
+		if(this.value == null){
+			return this.type;
+		} else {
+			return this.type + ":" + this.value;
+		}
+	}
+}
+//LEXER
+public class Lexer {
+	private String text;
+	private Position pos;
+	private char current_char;
+
+	public Lexer(String text) {
+		keys.add("local");
+		keys.add("if");
+		keys.add("elif");
+		keys.add("else");
+		keys.add("while");
+		keys.add("for");
+		keys.add("function");
+		keys.add("class");
+
+		this.text = text;
+		this.pos = new Position(-1, 0, - 1, text);
+		this.current_char = 0;
+		this.advance();
+	}
+
+	public void advance() {
+		this.pos.advance(this.current_char);
+		if (this.pos.idx < this.text.length()){
+			this.current_char = this.text.charAt(this.pos.idx);
+		} else { this.current_char = 0; }
+	}
+
+	public Object make_tokens() {
+		ArrayList<Token> tokens = new ArrayList<Token>();
+
+		while (this.current_char != 0) {
+			String charr = Character.toString(this.current_char);
+			if (charr.matches("[ \t]{1}")) {
+				this.advance();
+			} else if ((DIGITS).contains(charr)) {
+				tokens.add(this.make_number());
+			} else if (charr.matches("[A-Za-z]+")) {
+				tokens.add(this.make_identifier());
+			} else if (this.current_char == '"') {
+				tokens.add(this.make_string());
+			} else if (this.current_char == '~') {
+				this.advance();
+				this.skip_comment();
+			} else if ((";\n").contains(charr)) {
+				tokens.add(new Token(TT_NEWLINE, this.pos));
+				this.advance();
+			} else if (this.current_char == '+') {
+				tokens.add(this.make_pe());
+			} else if (this.current_char == '-') {
+				tokens.add(this.make_arrow());
+			} else if (this.current_char == '*') {
+				tokens.add(make_pow());
+			} else if (this.current_char == '/') {
+				tokens.add(new Token(TT_DIV, this.pos));
+				this.advance();
+			} else if (this.current_char == '(') {
+				tokens.add(new Token(TT_LPAREN, this.pos));
+				this.advance();
+			} else if (this.current_char == ')') {
+				tokens.add(new Token(TT_RPAREN, this.pos));
+				this.advance();
+			} else if (this.current_char == '{') {
+				tokens.add(new Token(TT_LBRACE, this.pos));
+				this.advance();
+			} else if (this.current_char == '}') {
+				tokens.add(new Token(TT_RBRACE, this.pos));
+				this.advance();
+			} else if (this.current_char == '[') {
+				tokens.add(new Token(TT_LSQUARE, this.pos));
+				this.advance();
+			} else if (this.current_char == ']') {
+				tokens.add(new Token(TT_RSQUARE, this.pos));
+				this.advance();
+			} else if (this.current_char == ',') {
+				tokens.add(new Token(TT_COMA, this.pos));
+				this.advance();
+			} else if (this.current_char == '.') {
+				tokens.add(new Token(TT_DOT, this.pos));
+				this.advance();
+			} else if (this.current_char == '!') {
+				tokens.add(this.make_not_equals());
+			} else if (this.current_char == '=') {
+				tokens.add(this.make_equals());
+			} else if (this.current_char == '>') {
+				tokens.add(this.make_greater_then());
+			} else if (this.current_char == '<') {
+				tokens.add(this.make_less_then());
+			} else if (this.current_char == '&') {
+				Object res = this.make_and();
+				if(res instanceof Error) {
+					tokens.clear();
+					return res;
+				} else {
+					tokens.add((Token)res);
+				}
+			} else if (this.current_char == '|') {
+				Object res = this.make_or();
+				if(res instanceof Error) {
+					tokens.clear();
+					return res;
+				} else {
+					tokens.add((Token)res);
+				}
+			} else {
+				Position pos_start = this.pos.copy();
+				char cchar= this.current_char;
+				this.advance();
+				tokens.clear();
+				return IllegalCharError(pos_start, this.pos, "'" + cchar + "'" );
+			}
+		}
+		tokens.add(new Token(TT_EOF, this.pos));
+		return tokens;
+	}
+
+	public Token make_number() {
+		Position start_pos = this.pos.copy();
+		String num_str = "";
+		int dot_count = 0;
+		while (this.current_char != 0 && "0123456789.".contains(Character.toString(this.current_char))) {
+			if (this.current_char == '.') {
+				if (dot_count == 1) {break;}
+				dot_count++;
+				num_str = num_str + ".";
+			} else {
+				num_str = num_str + this.current_char;
+			}
+			this.advance();
+		}
+		if (dot_count == 0) {
+			return new Token(TT_INT, Integer.parseInt(num_str), start_pos, this.pos);
+		} else {
+			return new Token(TT_DOUBLE, Double.parseDouble(num_str), start_pos, this.pos);
+		}
+	}
+	public Token make_string() {
+		Position start_pos = this.pos.copy();
+		String str = "";
+		Boolean escape_character = false;
+		this.advance();
+
+		HashMap<String, String> escape_characters = new HashMap<>();
+		escape_characters.put("n", "\n");
+		escape_characters.put("t", "\t");
+
+		while (this.current_char != 0 &&  ( this.current_char != '"' || escape_character)) {
+			if(escape_character) {
+				escape_character = false;
+				String charr = Character.toString(this.current_char);
+				if(escape_characters.containsKey(charr)){
+					str = str + escape_characters.get(charr);
+				} else {
+					str = str + this.current_char;
+				}
+			} else {
+				if(this.current_char == '\\') {
+					escape_character = true;
+				} else {
+					escape_character = false;
+					str = str + this.current_char;
+				}
+			}
+			this.advance();
+
+		}
+		this.advance();
+		return new Token(TT_STRING, str, start_pos, this. pos);
+	}
+	public Token make_pow() {
+		String id_str = "";
+		Position pos_start = this.pos.copy();
+		int count = 0;
+		while (this.current_char == '*') {
+			if (count == 2) { break;}
+			id_str = id_str + '*';
+			count++;
+			this.advance();
+		}
+		String tok_type;
+		if (count == 1) {
+			tok_type = TT_MUL;
+		} else {
+			tok_type = TT_POW;
+		}
+		return new Token(tok_type, pos_start, this.pos);
+	}
+	public Token make_arrow() {
+		String tok_type = TT_MINUS;
+		Position pos_start = this.pos.copy();
+		this.advance();
+		if (this.current_char == '>') {
+			this.advance();
+			tok_type = TT_ARROW;
+		}
+		if (this.current_char == '=') {
+			this.advance();
+			tok_type = TT_ME;
+		}
+		return new Token(tok_type, pos_start, this.pos);
+	}
+	public Token make_equals() {
+		String tok_type = TT_EQ;
+		Position pos_start = this.pos.copy();
+		this.advance();
+		if (this.current_char == '=') {
+			this.advance();
+			tok_type = TT_EE;
+		}
+		return new Token(tok_type, pos_start, this.pos);
+	}
+	public Token make_not_equals() {
+		String tok_type = TT_NOT;
+		Position pos_start = this.pos.copy();
+		this.advance();
+		if (this.current_char == '=') {
+			this.advance();
+			tok_type = TT_NE;
+		}
+		return new Token(tok_type, pos_start, this.pos);
+	}
+	public Token make_pe() {
+		String tok_type = TT_PLUS;
+		Position pos_start = this.pos.copy();
+		this.advance();
+		if (this.current_char == '=') {
+			this.advance();
+			tok_type = TT_PE;
+		}
+		return new Token(tok_type, pos_start, this.pos);
+	}
+	public Token make_greater_then() {
+		String tok_type = TT_GT;
+		Position pos_start = this.pos.copy();
+		this.advance();
+		if (this.current_char == '=') {
+			this.advance();
+			tok_type = TT_GTE;
+		}
+		return new Token(tok_type, pos_start, this.pos);
+	}
+	public Token make_less_then() {
+		String tok_type = TT_LT;
+		Position pos_start = this.pos.copy();
+		this.advance();
+		if (this.current_char == '=') {
+			this.advance();
+			tok_type = TT_LTE;
+		}
+		return new Token(tok_type, pos_start, this.pos);
+	}
+	public Object make_and() {
+		Position pos_start = this.pos.copy();
+		this.advance();
+		if (this.current_char == '&') {
+			this.advance();
+			return new Token(TT_AND, pos_start, this.pos);
+		} else {
+			return ExpectedCharError(pos_start, this.pos, "'&'");
+		}
+	}
+	public Object make_or() {
+		Position pos_start = this.pos.copy();
+		this.advance();
+		if (this.current_char == '|' ) {
+			this.advance();
+			return new Token(TT_OR, pos_start, this.pos);
+		} else {
+			return ExpectedCharError(pos_start, this.pos, "'|'");
+		}
+	}
+	public void skip_comment() {
+		while (this.current_char != 0 && this.current_char != '\n' && this.current_char != '~') {
+			this.advance();
+		}
+		//if (this.current_char == '~') {
+			this.advance();
+		//}
+	}
+	public Token make_identifier() {
+		String id_str = "";
+		Position pos_start = this.pos.copy();
+
+		while (this.current_char != 0 && Character.toString(this.current_char).matches("[A-Za-z_0-9]+")) {
+			id_str = id_str + this.current_char;
+			this.advance();
+		}
+		String tok_type;
+		if (keys.contains(id_str)) {
+			tok_type = TT_KEYWORD;
+		} else {
+			tok_type = TT_IDENTIFIER;
+		}
+		return new Token(tok_type, id_str, pos_start, this.pos);
+	}
+}
+
+//NODES
+public class BaseNode {
+	public Object child;
+
+	public BaseNode set_child (Object child) {
+		this.child = child;
+		return this;
+	}
+}
+public class NumberNode extends BaseNode {
+	private Token tok;
+	public Position pos_start, pos_end;
+
+	public NumberNode (Token tok) {
+		this.tok = tok;
+		this.pos_start = this.tok.pos_start;
+		this.pos_end = this.tok.pos_end;
+	}
+
+	public Position get_start_pos() {
+		return this.pos_start;
+	}
+	public Position get_end_pos() {
+		return this.pos_end;
+	}
+}
+
+public class StringNode extends BaseNode {
+	private Token tok;
+	public Position pos_start, pos_end;
+
+	public StringNode (Token tok) {
+		this.tok = tok;
+		this.pos_start = this.tok.pos_start;
+		this.pos_end = this.tok.pos_end;
+	}
+
+	public Position get_start_pos() {
+		return this.pos_start;
+	}
+	public Position get_end_pos() {
+		return this.pos_end;
+	}
+}
+
+public class VarAccessNode extends BaseNode {
+	private Token var_name_tok;
+	public Position pos_start, pos_end;
+
+	public VarAccessNode(Token var_name_tok) {
+		this.var_name_tok = var_name_tok;
+		this.pos_start = this.var_name_tok.pos_start;
+		this.pos_end = this.var_name_tok.pos_end;
+	}
+
+	public Position get_start_pos() {
+		return this.pos_start;
+	}
+	public Position get_end_pos() {
+		return this.pos_end;
+	}
+}
+
+public class VarAssignNode extends BaseNode{
+	private Token var_name_tok;
+	private Object value_node;
+	public Position pos_start, pos_end;
+	public ArrayList<Token> names = new ArrayList<>();
+	public Boolean local;
+	public String type;
+
+	public VarAssignNode(Token var_name_tok, Object value_node, Boolean local, String type) {
+		this.var_name_tok = var_name_tok;
+		this.value_node = value_node;
+		this.pos_start = this.var_name_tok.pos_start;
+		this.local = local;
+		this.type = type;
+		try {
+			java.lang.reflect.Method method2 = value_node.getClass().getDeclaredMethod("get_end_pos");
+			this.pos_end = (Position)method2.invoke(value_node);
+		} catch (Exception e) {_toast(e.toString());}
+	}
+	public VarAssignNode(Token var_name_tok, Object value_node, Boolean local, String type, ArrayList<Token> names) {
+		this.names = names;
+		this.var_name_tok = var_name_tok;
+		this.value_node = value_node;
+		this.pos_start = this.var_name_tok.pos_start;
+		this.local = local;
+		this.type = type;
+		Token tok;
+		if (names.size() > 0) {
+			tok = names.get(names.size()-1);
+		} else {
+			tok = this.var_name_tok;
+		}
+		this.pos_end = tok.pos_end;
+	}
+
+	public Position get_start_pos() {
+		return this.pos_start;
+	}
+	public Position get_end_pos() {
+		return this.pos_end;
+	}
+}
+
+public class BinOpNode extends BaseNode {
+	private Token tok;
+	private Object left_node, right_node;
+	public Position pos_start, pos_end;
+
+	public BinOpNode(Object left_node, Token tok, Object right_node) {
+		this.tok = tok;
+		this.left_node = left_node;
+		this.right_node = right_node;
+		try {
+			java.lang.reflect.Method method1 = left_node.getClass().getDeclaredMethod("get_start_pos");
+			java.lang.reflect.Method method2 = right_node.getClass().getDeclaredMethod("get_end_pos");
+			this.pos_start = (Position)method1.invoke(left_node);
+			this.pos_end = (Position)method2.invoke(right_node);
+		} catch (Exception e) {_toast(e.toString());}
+	}
+
+	public Position get_start_pos() {
+		return this.pos_start;
+	}
+	public Position get_end_pos() {
+		return this.pos_end;
+	}
+}
+
+public class UnaryOpNode extends BaseNode {
+	private Token op_tok;
+	private Object node;
+	public Position pos_start, pos_end;
+
+	public UnaryOpNode (Token op_tok, Object node) {
+		this.op_tok = op_tok;
+		this.node = node;
+		this.pos_start = op_tok.pos_start;
+		try {
+			java.lang.reflect.Method method2 = node.getClass().getDeclaredMethod("get_end_pos");
+			this.pos_end = (Position)method2.invoke(node);
+		} catch (Exception e) {}
+	}
+
+	public Position get_start_pos() {
+		return this.pos_start;
+	}
+	public Position get_end_pos() {
+		return this.pos_end;
+	}
+}
+public class IfNode extends BaseNode {
+	public ArrayList<Object> conditions;
+	public ArrayList<Object> expressions;
+	public Object else_case;
+	public Position pos_start, pos_end;
+	public Boolean else_b = false;
+
+	public IfNode (ArrayList<Object> conditions, ArrayList<Object> expressions) {
+		this.conditions = conditions;
+		this.expressions = expressions;
+
+		try {
+			java.lang.reflect.Method method1 = expressions.get(0).getClass().getDeclaredMethod("get_start_pos");
+			java.lang.reflect.Method method2 = expressions.get(expressions.size()-1).getClass().getDeclaredMethod("get_end_pos");
+			this.pos_start = (Position)method1.invoke(expressions.get(0));
+			this.pos_end = (Position)method2.invoke(expressions.get(expressions.size()-1));
+		} catch (Exception e) {_toast("ifnode "+e.toString());}
+	}
+	public IfNode (ArrayList<Object> conditions, ArrayList<Object> expressions, Object else_case) {
+		this.conditions = conditions;
+		this.expressions = expressions;
+		this.else_case = else_case;
+		this.else_b = true;
+
+		try {
+			java.lang.reflect.Method method1 = expressions.get(0).getClass().getDeclaredMethod("get_start_pos");
+			java.lang.reflect.Method method2 = else_case.getClass().getDeclaredMethod("get_end_pos");
+			this.pos_start = (Position)method1.invoke(expressions.get(0));
+			this.pos_end = (Position)method2.invoke(else_case);
+		} catch (Exception e) {_toast("ifnode (with else case)"+e.toString());}
+	}
+
+	public Position get_start_pos() {
+		return this.pos_start;
+	}
+	public Position get_end_pos() {
+		return this.pos_end;
+	}
+}
+
+public class WhileNode extends BaseNode {
+	public Object condition;
+	public Object expr;
+	public Position pos_start, pos_end;
+
+	public WhileNode (Object condition, Object expr) {
+		this.condition = condition;
+		this.expr = expr;
+		try {
+			java.lang.reflect.Method method1 = condition.getClass().getDeclaredMethod("get_start_pos");
+			java.lang.reflect.Method method2 = expr.getClass().getDeclaredMethod("get_end_pos");
+			this.pos_start = (Position)method1.invoke(condition);
+			this.pos_end = (Position)method2.invoke(expr);
+		} catch (Exception e) {_toast("whilenode "+e.toString());}
+	}
+
+	public Position get_start_pos() {
+		return this.pos_start;
+	}
+	public Position get_end_pos() {
+		return this.pos_end;
+	}
+}
+public class ForNode extends BaseNode {
+	public Token var;
+	public Object from, to, expr;
+	public Position pos_start, pos_end;
+
+	public ForNode (Token var, Object from, Object to, Object expr) {
+		this.from = from;
+		this.to = to;
+		this.var = var;
+		this.expr = expr;
+		this.pos_start = (Position)var.pos_start;
+		try {
+			java.lang.reflect.Method method2 = expr.getClass().getDeclaredMethod("get_end_pos");
+			this.pos_end = (Position)method2.invoke(expr);
+		} catch (Exception e) {_toast("fornode "+e.toString());}
+	}
+
+	public Position get_start_pos() {
+		return this.pos_start;
+	}
+	public Position get_end_pos() {
+		return this.pos_end;
+	}
+}
+
+public class FuncDefNode extends BaseNode {
+	public Token var_name;
+	public Object expr;
+	public ArrayList<Token> args;
+	public Boolean noname;
+	public Position pos_start, pos_end;
+
+	public FuncDefNode (Token var_name, ArrayList<Token> args, Object expr) {
+		this.var_name = var_name;
+		this.noname = false;
+		this.expr = expr;
+		this.args = args;
+
+		this.pos_start = this.var_name.pos_start;
+		try {
+			java.lang.reflect.Method method2 = expr.getClass().getDeclaredMethod("get_end_pos");
+			this.pos_end = (Position)method2.invoke(expr);
+		} catch (Exception e) {_toast("funcdefnode "+e.toString());}
+	}
+	public FuncDefNode (ArrayList<Token> args, Object expr) {
+		this.expr = expr;
+		this.args = args;
+		this.noname = true;
+
+		if(this.args.size()!=0) {
+			this.pos_start = this.args.get(0).pos_start;
+		} else {
+			try {
+				java.lang.reflect.Method method2 = expr.getClass().getDeclaredMethod("get_end_pos");
+				this.pos_end = (Position)method2.invoke(expr);
+			} catch (Exception e) {_toast("funcdefnode "+e.toString());}
+		}
+	}
+
+	public Position get_start_pos() {
+		return this.pos_start;
+	}
+	public Position get_end_pos() {
+		return this.pos_end;
+	}
+}
+
+public class CallNode extends BaseNode {
+	public Object node_to_call;
+	public ArrayList<Object> args;
+	public Position pos_start, pos_end;
+
+	public CallNode (Object node_to_call, ArrayList<Object> args) {
+		this.node_to_call = node_to_call;
+		this.args = args;
+
+		try {
+				java.lang.reflect.Method method2 = node_to_call.getClass().getDeclaredMethod("get_start_pos");
+				this.pos_start = (Position)method2.invoke(node_to_call);
+			} catch (Exception e) {_toast("funcdefnode "+e.toString());}
+		if(this.args.size()!=0) {
+			try {
+				Object expr = args.get(0);
+				java.lang.reflect.Method method2 = expr.getClass().getDeclaredMethod("get_end_pos");
+				this.pos_end = (Position)method2.invoke(expr);
+			} catch (Exception e) {_toast("funcdefnode "+e.toString());}
+		} else {
+			try {
+				java.lang.reflect.Method method2 = node_to_call.getClass().getDeclaredMethod("get_end_pos");
+				this.pos_end = (Position)method2.invoke(node_to_call);
+			} catch (Exception e) {_toast("funcdefnode "+e.toString());}
+		}
+	}
+	public Position get_start_pos() {
+		return this.pos_start;
+	}
+	public Position get_end_pos() {
+		return this.pos_end;
+	}
+}
+
+public class ListNode extends BaseNode {
+	public ArrayList<Object> elements;
+	public Position pos_start, pos_end;
+
+	public ListNode (ArrayList<Object> elements, Position pos_start, Position pos_end) {
+		this.elements = elements;
+		this.pos_start = pos_start;
+		this.pos_end = pos_end;
+	}
+	public Position get_start_pos() {
+		return this.pos_start;
+	}
+	public Position get_end_pos() {
+		return this.pos_end;
+	}
+}
+
+public class ClassNode extends BaseNode {
+	public Token class_name;
+	public Object body_nodes;
+	public Position pos_start, pos_end;
+
+	public ClassNode (Token class_name, Object body_nodes, Position pos_start, Position pos_end) {
+		this.class_name = class_name;
+		this.body_nodes = body_nodes;
+		this.pos_start = pos_start;
+		this.pos_end = pos_end;
+	}
+	public Position get_start_pos() {
+		return this.pos_start;
+	}
+	public Position get_end_pos() {
+		return this.pos_end;
+	}
+}
+
+//PARSE RESULT
+public class ParseResult {
+	public Object error, node;
+	public Boolean error_b = false;
+	public Boolean node_b = false;
+	public int advance_count = 0;
+	public int reverse_count = 0;
+
+	public ParseResult () {
+		this.error_b = false;
+		this.node_b = false;
+	}
+	public void register_advancement() {
+		this.advance_count++;
+	}
+	public Object _register(Object res){
+		if (res instanceof ParseResult) {
+			ParseResult parres = (ParseResult) res;
+			if (parres.error_b) { this.error = parres.error; this.error_b = true; }
+			if (parres.node_b) { this.node = parres.node; this.node_b = true; }
+			this.advance_count = this.advance_count + parres.advance_count;
+			return parres.node;
+		}
+		return res;
+	}
+	public Object try_register(ParseResult res, ParseResult self) {
+		if(res.error_b){
+			self.reverse_count = res.advance_count;
+			return res.error.toString();
+		}
+		return self._register(res);
+	}
+	public Object succes(Object node) {
+		this.node = node;
+		this.node_b = true;
+		return this;
+	}
+	public Object failure(Object error) {
+		this.error = error;
+		this.error_b = true;
+		return this;
+	}
+}
+
+//PARSER
+public class Parser {
+	private ArrayList<Token> tokens;
+	private int token_idx;
+	private Token current_tok;
+
+	public Parser (ArrayList<Token> tokens) {
+		this.token_idx = - 1;
+		this.tokens = tokens;
+		this.advance();
+	}
+
+	public Token advance() {
+		this.token_idx++;
+		if (token_idx < this.tokens.size()) {
+			this.current_tok = this.tokens.get(this.token_idx);
+		}
+		return this.current_tok;
+	}
+	public Token reverse(int amount) {
+		this.token_idx = this.token_idx-amount;
+		if (this.token_idx < this.tokens.size() && this.token_idx >= 0) {
+			this.current_tok = this.tokens.get(this.token_idx);
+		}
+		return this.current_tok;
+	}
+	public void skip_lines() {
+		ParseResult res = new ParseResult();
+		while(this.current_tok.type == TT_NEWLINE) {
+			res.register_advancement();
+			this.advance();
+		}
+	}
+
+	public Object parse() {
+		Object res = this.statements(true);
+		/*if (!((ParseResult)res).error_b && this.current_tok.type != TT_EOF) {
+			return ((ParseResult)res).failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "Expected operator/value/identifier"));
+		}*/
+		return res;
+	}
+	//statements
+	public Object statements(Boolean global){
+		ParseResult res = new ParseResult();
+		Position pos_start = this.current_tok.pos_start.copy();
+		ArrayList<Object> statements = new ArrayList<>();
+
+		this.skip_lines();
+		Object statement = res._register(this.expr());
+		if(res.error_b){return res;}
+		statements.add(statement);
+
+		Boolean more_statements = true;
+		while(true) {
+			ParseResult ress = new ParseResult ();
+			while(this.current_tok.type == TT_NEWLINE) {
+				res.register_advancement();
+				this.advance();
+				more_statements = true;
+			}
+			if(this.current_tok.type == TT_EOF) {return res.succes(new ListNode(statements, pos_start, this.current_tok.pos_end));}
+			if(this.current_tok.type == TT_RBRACE && !global) {return res.succes(new ListNode(statements, pos_start, this.current_tok.pos_end));}
+			if(!more_statements){break;}
+			int idx = this.token_idx-1;
+			Object statement_2 = res.try_register((ParseResult)this.expr(), res);
+			if((statement_2 instanceof String)) {
+				_toast((String)statement_2);
+				this.reverse(res.reverse_count);
+				more_statements = false;
+				continue;
+			} else {
+				statements.add(statement_2);
+			}
+		}
+		this.skip_lines();
+		return res.succes(new ListNode(statements, pos_start, this.current_tok.pos_end));
+ 	}
+	//func-def
+	public Object func_def() {
+		ParseResult res = new ParseResult();
+		Token var_name = new Token(TT_NOT);
+		Boolean noname = true;
+		ArrayList<Token> args = new ArrayList<>();
+
+		if (!(this.current_tok.matches(TT_KEYWORD, "function"))) {
+			return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "expected 'function'"));
+		}
+		res.register_advancement();
+		this.advance();
+
+		if (this.current_tok.type == TT_IDENTIFIER) {
+			var_name = this.current_tok;
+			res.register_advancement();
+			this.advance();
+			noname = false;
+			if (!(this.current_tok.type == TT_LPAREN)) {
+				return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "expected '('"));
+			}
+		} else {
+			if (!(this.current_tok.type == TT_LPAREN)) {
+				return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "expected '(' or identifier"));
+			}
+		}
+		res.register_advancement();
+		this.advance();
+
+		if (this.current_tok.type == TT_IDENTIFIER) {
+			args.add(this.current_tok);
+			res.register_advancement();
+			this.advance();
+			while (this.current_tok.type == TT_COMA) {
+				res.register_advancement();
+				this.advance();
+				if (!(this.current_tok.type == TT_IDENTIFIER)) {
+					return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "expected identifier"));
+				}
+				args.add(this.current_tok);
+				res.register_advancement();
+				this.advance();
+			}
+			if (!(this.current_tok.type == TT_RPAREN)) {
+				return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "expected ',' or ')'"));
+			}
+		} else {
+			if (!(this.current_tok.type == TT_RPAREN)) {
+				return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "expected ')'"));
+			}
+		}
+		res.register_advancement();
+		this.advance();
+
+		Object expr;
+		if ((this.current_tok.type == TT_ARROW)) {
+			res.register_advancement();
+			this.advance();
+			expr = res._register(this.expr());
+			if(res.error_b) {return res;}
+		} else if(this.current_tok.type == TT_LBRACE) {
+			res.register_advancement();
+			this.advance();
+			expr = res._register(this.statements(false));
+			if(res.error_b) {return res;}
+			if(!(this.current_tok.type == TT_RBRACE)) {
+				return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "expected '}'"));
+			}
+			res.register_advancement();
+			this.advance();
+		} else {
+			return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "expected '->' or '{'"));
+		}
+		if(noname) {
+			return res.succes(new FuncDefNode(args, expr));
+		}
+		return res.succes(new FuncDefNode(var_name, args, expr));
+	}
+	//for expr
+	public Object for_expr() {
+		ParseResult res = new ParseResult();
+		Boolean with_parens = false;
+
+		if (!(this.current_tok.matches(TT_KEYWORD, "for"))) {
+			return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "expected 'for'"));
+		}
+		res.register_advancement();
+		this.advance();
+
+		if (this.current_tok.type == TT_LPAREN) {
+			res.register_advancement();
+			this.advance();
+			with_parens = true;
+		}
+
+		if (!(this.current_tok.type == TT_IDENTIFIER)) {
+			return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "expected identifier"));
+		}
+		Token var = this.current_tok;
+		res.register_advancement();
+		this.advance();
+
+		if (!(this.current_tok.type == TT_EQ)) {
+			return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "expected '='"));
+		}
+		res.register_advancement();
+		this.advance();
+
+		Object from = res._register(this.expr());
+		if(res.error_b) {return res;}
+
+		if (!(this.current_tok.type == TT_COMA)) {
+			return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "expected ','"));
+		}
+		res.register_advancement();
+		this.advance();
+
+		Object to = res._register(this.expr());
+		if(res.error_b) {return res;}
+
+		if (with_parens) {
+			if(!(this.current_tok.type == TT_RPAREN)) {
+				return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "expected ')'"));
+			}
+			res.register_advancement();
+			this.advance();
+		}
+
+		if (!(this.current_tok.type == TT_LBRACE)) {
+			return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "expected '{'"));
+		}
+		res.register_advancement();
+		this.advance();
+
+		Object expr = res._register(this.statements(false));
+		if(res.error_b) {return res;}
+
+		if (!(this.current_tok.type == TT_RBRACE)) {
+			return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "expected '}'"));
+		}
+		res.register_advancement();
+		this.advance();
+
+		return res.succes(new ForNode(var, from, to, expr));
+	}
+	//while expr
+	public Object while_expr() {
+		ParseResult res = new ParseResult();
+
+		if (!(this.current_tok.matches(TT_KEYWORD, "while"))) {
+			return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "expected 'while'"));
+		}
+		res.register_advancement();
+		this.advance();
+
+		Object condition = res._register(this.expr());
+		if(res.error_b) {return res;}
+
+		if (!(this.current_tok.type == TT_LBRACE)) {
+			return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "expected '{'"));
+		}
+		res.register_advancement();
+		this.advance();
+
+		Object expr = res._register(this.statements(false));
+		if(res.error_b) {return res;}
+
+		if (!(this.current_tok.type == TT_RBRACE)) {
+			return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "expected '}'"));
+		}
+		res.register_advancement();
+		this.advance();
+
+		return res.succes(new WhileNode(condition, expr));
+	}
+	//if expr
+	public Object if_expr() {
+		ParseResult res = new ParseResult();
+
+		ArrayList<Object> conditions = new ArrayList<>();
+		ArrayList<Object> expressions = new ArrayList<>();
+
+		if (!(this.current_tok.matches(TT_KEYWORD, "if"))) {
+			return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "expected 'if'"));
+		}
+		res.register_advancement();
+		this.advance();
+
+		Object condition = res._register(this.expr());
+		if(res.error_b) {return res;}
+
+		if (!(this.current_tok.type == TT_LBRACE)) {
+			return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "expected '{'"));
+		}
+		res.register_advancement();
+		this.advance();
+
+		Object expr = res._register(this.statements(false));
+		if(res.error_b) {return res;}
+
+		if (!(this.current_tok.type == TT_RBRACE)) {
+			return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "expected '}'"));
+		}
+		res.register_advancement();
+		this.advance();
+
+		conditions.add(condition);
+		expressions.add(expr);
+
+		while(this.current_tok.matches(TT_KEYWORD, "elif")) {
+			res.register_advancement();
+			this.advance();
+			Object conditionn = res._register(this.expr());
+			if(res.error_b) {return res;}
+
+			if (!(this.current_tok.type == TT_LBRACE)) {
+				return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "expected '{'"));
+			}
+			res.register_advancement();
+			this.advance();
+
+			Object exprr = res._register(this.statements(false));
+			if(res.error_b) {return res;}
+
+			if (!(this.current_tok.type == TT_RBRACE)) {
+				return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "expected '}'"));
+			}
+			res.register_advancement();
+			this.advance();
+			conditions.add(conditionn);
+			expressions.add(exprr);
+		}
+
+		if (this.current_tok.matches(TT_KEYWORD, "else")) {
+			res.register_advancement();
+			this.advance();
+			if (!(this.current_tok.type == TT_LBRACE)) {
+				return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "expected '{'"));
+			}
+			res.register_advancement();
+			this.advance();
+			Object else_case = res._register(this.statements(false));
+			if(res.error_b) {return res;}
+			if (!(this.current_tok.type == TT_RBRACE)) {
+				return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "expected '}'"));
+			}
+			res.register_advancement();
+			this.advance();
+
+			return res.succes(new IfNode(conditions, expressions, else_case));
+		}
+		return res.succes(new IfNode(conditions, expressions));
+	}
+	//list_expr
+	public Object list_expr() {
+		ParseResult res = new ParseResult();
+		ArrayList<Object> elements = new ArrayList<>();
+		Position pos_start = this.current_tok.pos_start.copy();
+
+		if (!(this.current_tok.type == TT_LSQUARE)) {
+			return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "expected '['"));
+		}
+		res.register_advancement();
+		this.advance();
+
+		if ((this.current_tok.type == TT_RSQUARE)) {
+			res.register_advancement();
+			this.advance();
+		} else {
+			elements.add(res._register(this.expr()));
+			if(res.error_b){
+				return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "expected ']', int, float, string, 'for', 'while', 'if', 'function', '(' or '['" ));
+			}
+			while ((this.current_tok.type == TT_COMA)) {
+				res.register_advancement();
+				this.advance();
+				elements.add(res._register(this.expr()));
+				if (res.error_b) {return res;}
+			}
+			if (!(this.current_tok.type == TT_RSQUARE)) {
+				return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "expected ']' or ','"));
+			}
+			res.register_advancement();
+			this.advance();
+		}
+		return res.succes(new ListNode(elements, pos_start, this.current_tok.pos_end.copy()));
+	}
+	//class expr
+	public Object class_expr() {
+		ParseResult res = new ParseResult();
+		Position pos_start = this.current_tok.pos_start;
+
+		if (!(this.current_tok.matches(TT_KEYWORD, "class"))) {
+			return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "expected 'class'"));
+		}
+		res.register_advancement();
+		this.advance();
+
+		if (!(this.current_tok.type == TT_IDENTIFIER)) {
+			return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "expected identidier"));
+		}
+		Token class_name = this.current_tok;
+		res.register_advancement();
+		this.advance();
+
+		if (!(this.current_tok.type == TT_LBRACE)) {
+			return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "expected '{'"));
+		}
+		res.register_advancement();
+		this.advance();
+
+		Object body = res._register(this.statements(false));
+		if (res.error_b) {return res;}
+
+		if (!(this.current_tok.type == TT_RBRACE)) {
+			return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "expected '}'"));
+		}
+		res.register_advancement();
+		this.advance();
+
+		return res.succes(new ClassNode(class_name, body, pos_start, this.current_tok.pos_end));
+	}
+	//atom
+	public Object atom () {
+		ParseResult res = new ParseResult();
+
+		Token tok = this.current_tok;
+		if (tok.type == TT_INT || tok.type == TT_DOUBLE) {
+			res.register_advancement();
+			this.advance();
+			return res.succes(new NumberNode(tok));
+		} else if (tok.type == TT_STRING) {
+			res.register_advancement();
+			this.advance();
+			return res.succes(new StringNode(tok));
+		} else if (tok.type == TT_IDENTIFIER) {
+			res.register_advancement();
+			this.advance();
+			return res.succes(new VarAccessNode(tok));
+		} else if (tok.type == TT_LPAREN) {
+			res.register_advancement();
+			this.advance();
+			Object expr = res._register(this.expr());
+			if (res.error_b) {return res;}
+			if (this.current_tok.type == TT_RPAREN) {
+				res.register_advancement();
+				this.advance();
+				return res.succes(expr);
+			} else {
+				return res.failure(InvalidSyntaxError(tok.pos_start, tok.pos_end, "expected ')'"));
+			}
+		} else if (tok.type == TT_LSQUARE) {
+			Object list_expr = res._register(this.list_expr());
+			if (res.error_b) {return res;}
+			return res.succes(list_expr);
+		} else if(tok.matches(TT_KEYWORD, "if")) {
+			Object if_expr = res._register(this.if_expr());
+			if(res.error_b) {return res;}
+			return res.succes(if_expr);
+		} else if(tok.matches(TT_KEYWORD, "while")) {
+			Object while_expr = res._register(this.while_expr());
+			if(res.error_b) {return res;}
+			return res.succes(while_expr);
+		} else if(tok.matches(TT_KEYWORD, "for")) {
+			Object for_expr = res._register(this.for_expr());
+			if(res.error_b) {return res;}
+			return res.succes(for_expr);
+		} else if(tok.matches(TT_KEYWORD, "function")) {
+			Object func_def = res._register(this.func_def());
+			if(res.error_b) {return res;}
+			return res.succes(func_def);
+		} else if(tok.matches(TT_KEYWORD, "class")) {
+			Object class_expr = res._register(this.class_expr());
+			if(res.error_b) {return res;}
+			return res.succes(class_expr);
+		}
+		if(tok.type != TT_EOF) {
+			_toast("unexpexted " + tok.type);
+			return res.failure(InvalidSyntaxError(tok.pos_start, tok.pos_end, "expected int, float, string, 'for', 'while', 'if', 'function', '(' or '['" ));
+		}
+		return res.succes(new Number(0));
+	}
+	//call
+	public Object call() {
+		ParseResult res = new ParseResult();
+		ArrayList<Object> args = new ArrayList<>();
+		Object atom = res._register(this.atom());
+		if (res.error_b) {return res;}
+
+		Object child = atom;
+		while (this.current_tok.type == TT_DOT) {
+			res.register_advancement();
+			this.advance();
+			Object new_child = res._register(this.call());
+			if (res.error_b){ return res;}
+			try {
+				java.lang.reflect.Method set = child.getClass().getMethod("set_child", Object.class);
+				set.invoke(child, new_child);
+			} catch (Exception e) {_toast("call() " +e.toString());}
+			child = new_child;
+		}
+
+		this.skip_lines();
+		if ((this.current_tok.type == TT_LPAREN)) {
+			res.register_advancement();
+			this.advance();
+			if ((this.current_tok.type == TT_RPAREN)) {
+				res.register_advancement();
+				this.advance();
+			} else {
+				this.skip_lines();
+				args.add(res._register(this.expr()));
+				if (res.error_b) {
+					return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "expected '(', ')', 'if', 'for', 'while', 'function', int, float, identifier or operator"));
+				}
+
+				while ((this.current_tok.type == TT_COMA)) {
+					res.register_advancement();
+					this.advance();
+					this.skip_lines();
+					args.add(res._register(this.expr()));
+					if (res.error_b) {return res;}
+					this.skip_lines();
+				}
+				if (!(this.current_tok.type == TT_RPAREN)) {
+					return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "expected ')' or ','"));
+				}
+				res.register_advancement();
+				this.advance();
+			}
+			_toast("new:CallNode");
+			return res.succes(new CallNode(atom, args));
+		}
+
+		return res.succes(atom);
+	}
+	//power
+	public Object power () {
+		ParseResult res = new ParseResult();
+
+		Object left = res._register(this.call());
+		if (res.error_b) {return res;}
+		while (this.current_tok.type == TT_POW) {
+			Token op_tok = this.current_tok;
+			res.register_advancement();
+			this.advance();
+			Object right = res._register(this.factor());
+			if (res.error_b) {return res;}
+			left = new BinOpNode(left, op_tok, right);
+		}
+		return res.succes(left);
+	}
+	//factor
+	public Object factor () {
+		ParseResult res = new ParseResult();
+
+		Token tok = this.current_tok;
+		if (tok.type == TT_PLUS || tok.type == TT_MINUS) {
+			res.register_advancement();
+			this.advance();
+			Object factor = res._register(this.factor());
+			if (res.error_b) {return res;}
+			return res.succes(new UnaryOpNode(tok, factor));
+		}
+		return this.power();
+	}
+	//term
+	public Object term() {
+		ParseResult res = new ParseResult();
+		Object left = res._register(this.factor());
+		if (res.error_b) {return res;}
+		while (this.current_tok.type == TT_MUL || this.current_tok.type == TT_DIV) {
+			Token op_tok = this.current_tok;
+			res.register_advancement();
+			this.advance();
+			Object right = res._register(this.factor());
+			if (res.error_b) {return res;}
+			left = new BinOpNode(left, op_tok, right);
+		}
+		return res.succes(left);
+	}
+	//arith_expr
+	public Object arith_expr() {
+		ParseResult res = new ParseResult();
+		Object left = res._register(this.term());
+		if (res.error_b) {return res;}
+		while (this.current_tok.type == TT_PLUS || this.current_tok.type == TT_MINUS) {
+			Token op_tok = this.current_tok;
+			res.register_advancement();
+			this.advance();
+			Object right = res._register(this.term());
+			if (res.error_b) {return res;}
+			left = new BinOpNode(left, op_tok, right);
+		}
+		return res.succes(left);
+	}
+	//comp_expr
+	public Object comp_expr() {
+		ParseResult res = new ParseResult();
+
+		Token tok = this.current_tok;
+		if (tok.type == TT_NOT) {
+			res.register_advancement();
+			this.advance();
+			Object comp_expr = res._register(this.comp_expr());
+			if (res.error_b) {return res;}
+			return res.succes(new UnaryOpNode(tok, comp_expr));
+		}
+		Object left = res._register(this.arith_expr());
+		if (res.error_b) {return res;}
+		while (this.current_tok.type == TT_EE || this.current_tok.type == TT_NE || this.current_tok.type == TT_GT || this.current_tok.type == TT_LT || this.current_tok.type == TT_GTE || this.current_tok.type == TT_LTE) {
+			Token op_tok = this.current_tok;
+			res.register_advancement();
+			this.advance();
+			Object right = res._register(this.arith_expr());
+			if (res.error_b) {return res;}
+			left = new BinOpNode(left, op_tok, right);
+		}
+		return res.succes(left);
+	}
+	//expr
+	public Object expr() {
+		ParseResult res = new ParseResult();
+		if(this.current_tok.matches(TT_KEYWORD, "local")){
+			res.register_advancement();
+			this.advance();
+			if(this.current_tok.type != TT_IDENTIFIER) {
+				return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "Expected identifier"));
+			}
+			Token var_name = this.current_tok;
+			res.register_advancement();
+			this.advance();
+
+			ArrayList<Token> names = new ArrayList<>();
+
+			while (this.current_tok.type == TT_DOT) {
+				res.register_advancement();
+				this.advance();
+
+				if(this.current_tok.type != TT_IDENTIFIER) {
+					return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "Expected identifier"));
+				}
+				names.add(this.current_tok);
+				res.register_advancement();
+				this.advance();
+			}
+
+			String type = this.current_tok.type;
+			if(type != TT_EQ && type != TT_ME && type != TT_PE) { // =, +=, -=
+				return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "Expected '=', '+=', '-='"));
+			}
+			res.register_advancement();
+			this.advance();
+			Object expr = res._register(this.expr());
+			if(res.error_b) {return res;}
+			return res.succes(new VarAssignNode(var_name, expr, true, type, names));
+		}
+		if(this.current_tok.type == TT_IDENTIFIER) {
+			int idx = this.token_idx;
+			int i = 1;
+
+			Token var_name = this.current_tok;
+			res.register_advancement();
+			this.advance();
+
+			ArrayList<Token> names = new ArrayList<>();
+
+			while (this.current_tok.type == TT_DOT) {
+				res.register_advancement();
+				this.advance();
+
+				if(this.current_tok.type != TT_IDENTIFIER) {
+					return res.failure(InvalidSyntaxError(this.current_tok.pos_start, this.current_tok.pos_end, "Expected identifier"));
+				}
+				names.add(this.current_tok);
+				res.register_advancement();
+				this.advance();
+			}
+			String type = this.current_tok.type;
+			if(type == TT_EQ || type == TT_ME || type == TT_PE) { // =, +=, -=
+				res.register_advancement();
+				this.advance();
+				Object expr = res._register(this.expr());
+				if(res.error_b) {return res;}
+				_toast("new:VarAssignNode");
+				return res.succes(new VarAssignNode(var_name, expr, false, type, names));
+			} else {
+				this.token_idx = idx-1;
+				res.register_advancement();
+				this.advance();
+			}
+		}
+		Object left = res._register(this.comp_expr());
+		if (res.error_b) {return res;}
+		while (this.current_tok.type == TT_AND || this.current_tok.type == TT_OR) {
+			Token op_tok = this.current_tok;
+			res.register_advancement();
+			this.advance();
+			Object right = res._register(this.comp_expr());
+			if (res.error_b) {return res;}
+			left = new BinOpNode(left, op_tok, right);
+		}
+		return res.succes(left);
+	}
+	//bin-op РєРѕРіРґР° РЅРёР±СѓРґСЊ РІРІРµРґСѓ, РЅРµСЃРєРѕР»СЊРєРѕ СѓРєРѕСЂРѕС‚РёС‚ РєРѕРґ РїР°СЂСЃРµСЂР°
+	/*public Object bin_op(String func, String tt_1, String tt_2) {
+		ParseResult res = new ParseResult();
+		Object left = res._register(func());
+		if (res.error_b) {return res}
+
+		while (this.current_tok.type == tt_1 || this.current_tok.type == tt_2) {
+			Token op_tok = this.current_tok;
+			res.register_advancement();
+			this.advance();
+			Object right = res._register(func());
+			left = new BinOpNode(left, op_tok, right);
+		}
+		return res.succes(left);
+	}*/
+}
+
+//RUNTIME RESULT
+public class RTResult {
+	private Object error, value;
+	private Boolean error_b = false;
+	private Boolean value_b = false;
+
+	public RTResult () {
+		error_b = false;
+		value_b = false;
+	}
+
+	public Object _register (Object res) {
+		RTResult rtr = (RTResult)res;
+		if (rtr.error_b) {this.error = rtr.error; this.error_b = true;}
+		if (rtr.value_b) {this.value = rtr.value; this.value_b = true;}
+		return rtr.value;
+	}
+
+	public RTResult success(Object value) {
+		this.value_b =true;
+		this.value = value;
+		return this;
+	}
+	public RTResult failure(Object error) {
+		this.error_b = true;
+		this.error = error;
+		return this;
+	}
+}
+
+//VALUE
+public class Value {
+	public Object link;
+}
+//number
+public class Number extends Value {
+	private Position pos_start, pos_end;
+	private Context context;
+	private Object value;
+
+	public Number (Object value) {
+		this.value = value;
+	}
+	public void update(Number num) {
+		this.value = num.value;
+	}
+
+	public Number set_pos (Position pos_start, Position pos_end) {
+		this.pos_start = pos_start;
+		this.pos_end = pos_end;
+		return this;
+	}
+	public Number set_context(Context context) {
+		this.context = context;
+		return this;
+	}
+	public Object added_to (Object other) {
+		if (other instanceof Number) {
+			if (this.value instanceof Double) {
+				if (((Number)other).value instanceof Double) {
+					return new Number((Double)this.value + (Double)((Number)other).value).set_context(this.context);
+				} else {
+					return new Number((Double)this.value + (int)((Number)other).value).set_context(this.context);
+				}
+			} else {
+				if (((Number)other).value instanceof Double) {
+					return new Number((int)this.value + (Double)((Number)other).value).set_context(this.context);
+				} else {
+					return new Number((int)this.value + (int)((Number)other).value).set_context(this.context);
+				}
+			}
+		}
+		return RTError(((Number)other).pos_start, ((Number)other).pos_end, "Illegal operation", context);
+	}
+	public Object subbed_by (Object other) {
+		if (other instanceof Number) {
+			if (this.value instanceof Double) {
+				if (((Number)other).value instanceof Double) {
+					return new Number((Double)this.value - (Double)((Number)other).value).set_context(this.context);
+				} else {
+					return new Number((Double)this.value - (int)((Number)other).value).set_context(this.context);
+				}
+			} else {
+				if (((Number)other).value instanceof Double) {
+					return new Number((int)this.value - (Double)((Number)other).value).set_context(this.context);
+				} else {
+					return new Number((int)this.value - (int)((Number)other).value).set_context(this.context);
+				}
+			}
+		}
+		return RTError(((Number)other).pos_start, ((Number)other).pos_end, "Illegal operation", context);
+	}
+	public Object multed_by (Object other) {
+		if (other instanceof Number) {
+			if (this.value instanceof Double) {
+				if (((Number)other).value instanceof Double) {
+					return new Number((Double)this.value * (Double)((Number)other).value).set_context(this.context);
+				} else {
+					return new Number((Double)this.value * (int)((Number)other).value).set_context(this.context);
+				}
+			} else {
+				if (((Number)other).value instanceof Double) {
+					return new Number((int)this.value * (Double)((Number)other).value).set_context(this.context);
+				} else {
+					return new Number((int)this.value * (int)((Number)other).value).set_context(this.context);
+				}
+			}
+		}
+		return RTError(((Number)other).pos_start, ((Number)other).pos_end, "Illegal operation", context);
+	}
+	public Object divided_by (Object other) {
+		if (other instanceof Number) {
+			if (((Number)other).value.toString().equals("0")|| ((Number)other).value.toString().equals("0.0")) {return RTError(((Number)other).pos_start, ((Number)other).pos_end, "Division by zero", context);}
+			if (this.value instanceof Double) {
+				if (((Number)other).value instanceof Double) {
+					return new Number((Double)this.value / (Double)((Number)other).value).set_context(this.context);
+				} else {
+					return new Number((Double)this.value / (int)((Number)other).value).set_context(this.context);
+				}
+			} else {
+				if (((Number)other).value instanceof Double) {
+					return new Number((int)this.value / (Double)((Number)other).value).set_context(this.context);
+				} else {
+					return new Number((int)this.value / (int)((Number)other).value).set_context(this.context);
+				}
+			}
+		}
+		return RTError(((Number)other).pos_start, ((Number)other).pos_end, "Illegal operation", context);
+	}
+	public Object powed_by (Object other) {
+		if (other instanceof Number) {
+			if (this.value instanceof Double) {
+				if (((Number)other).value instanceof Double) {
+					return new Number(Math.pow((Double)this.value, (Double)((Number)other).value)).set_context(this.context);
+				} else {
+					return new Number(Math.pow((Double)this.value, (int)((Number)other).value)).set_context(this.context);
+				}
+			} else {
+				if (((Number)other).value instanceof Double) {
+					return new Number(Math.pow((int)this.value, (Double)((Number)other).value)).set_context(this.context);
+				} else {
+					return new Number(Math.pow((int)this.value, (int)((Number)other).value)).set_context(this.context);
+				}
+			}
+		}
+		return RTError(((Number)other).pos_start, ((Number)other).pos_end, "Illegal operation", context);
+	}
+	public Object compression_ee(Object other) {
+		if (other instanceof Number) {
+			if (this.value instanceof Double) {
+				if (((Number)other).value instanceof Double) {
+					return new Number(((Double)this.value).equals((Double)((Number)other).value) ? 1 : 0).set_context(this.context);
+				} else {
+					return new Number(((Double)this.value == (int)((Number)other).value) ? 1 : 0).set_context(this.context);
+				}
+			} else {
+				if (((Number)other).value instanceof Double) {
+					return new Number(((int)this.value == (Double)((Number)other).value) ? 1 : 0).set_context(this.context);
+				} else {
+					return new Number(((int)this.value == (int)((Number)other).value) ? 1 : 0).set_context(this.context);
+				}
+			}
+		}
+		return RTError(((Number)other).pos_start, ((Number)other).pos_end, "Illegal operation", context);
+	}
+	public Object compression_ne(Object other) {
+		if (other instanceof Number) {
+			if (this.value instanceof Double) {
+				if (((Number)other).value instanceof Double) {
+					return new Number(((Double)this.value != (Double)((Number)other).value) ? 1 : 0).set_context(this.context);
+				} else {
+					return new Number(((Double)this.value != (int)((Number)other).value) ? 1 : 0).set_context(this.context);
+				}
+			} else {
+				if (((Number)other).value instanceof Double) {
+					return new Number(((int)this.value != (Double)((Number)other).value) ? 1 : 0).set_context(this.context);
+				} else {
+					return new Number(((int)this.value != (int)((Number)other).value) ? 1 : 0).set_context(this.context);
+				}
+			}
+		}
+		return RTError(((Number)other).pos_start, ((Number)other).pos_end, "Illegal operation", context);
+	}
+	public Object compression_gt(Object other) {
+		if (other instanceof Number) {
+			if (this.value instanceof Double) {
+				if (((Number)other).value instanceof Double) {
+					return new Number(((Double)this.value > (Double)((Number)other).value) ? 1 : 0).set_context(this.context);
+				} else {
+					return new Number(((Double)this.value > (int)((Number)other).value) ? 1 : 0).set_context(this.context);
+				}
+			} else {
+				if (((Number)other).value instanceof Double) {
+					return new Number(((int)this.value > (Double)((Number)other).value) ? 1 : 0).set_context(this.context);
+				} else {
+					return new Number(((int)this.value > (int)((Number)other).value) ? 1 : 0).set_context(this.context);
+				}
+			}
+		}
+		return RTError(((Number)other).pos_start, ((Number)other).pos_end, "Illegal operation", context);
+	}
+	public Object compression_lt(Object other) {
+		if (other instanceof Number) {
+			if (this.value instanceof Double) {
+				if (((Number)other).value instanceof Double) {
+					return new Number(((Double)this.value < (Double)((Number)other).value) ? 1 : 0).set_context(this.context);
+				} else {
+					return new Number(((Double)this.value < (int)((Number)other).value) ? 1 : 0).set_context(this.context);
+				}
+			} else {
+				if (((Number)other).value instanceof Double) {
+					return new Number(((int)this.value < (Double)((Number)other).value) ? 1 : 0).set_context(this.context);
+				} else {
+					return new Number(((int)this.value < (int)((Number)other).value) ? 1 : 0).set_context(this.context);
+				}
+			}
+		}
+		return RTError(((Number)other).pos_start, ((Number)other).pos_end, "Illegal operation", context);
+	}
+	public Object compression_gte(Object other) {
+		if (other instanceof Number) {
+			if (this.value instanceof Double) {
+				if (((Number)other).value instanceof Double) {
+					return new Number(((Double)this.value >= (Double)((Number)other).value) ? 1 : 0).set_context(this.context);
+				} else {
+					return new Number(((Double)this.value >= (int)((Number)other).value) ? 1 : 0).set_context(this.context);
+				}
+			} else {
+				if (((Number)other).value instanceof Double) {
+					return new Number(((int)this.value >= (Double)((Number)other).value) ? 1 : 0).set_context(this.context);
+				} else {
+					return new Number(((int)this.value >= (int)((Number)other).value) ? 1 : 0).set_context(this.context);
+				}
+			}
+		}
+		return RTError(((Number)other).pos_start, ((Number)other).pos_end, "Illegal operation", context);
+	}
+	public Object compression_lte(Object other) {
+		if (other instanceof Number) {
+			if (this.value instanceof Double) {
+				if (((Number)other).value instanceof Double) {
+					return new Number(((Double)this.value <= (Double)((Number)other).value) ? 1 : 0).set_context(this.context);
+				} else {
+					return new Number(((Double)this.value <= (int)((Number)other).value) ? 1 : 0).set_context(this.context);
+				}
+			} else {
+				if (((Number)other).value instanceof Double) {
+					return new Number(((int)this.value <= (Double)((Number)other).value) ? 1 : 0).set_context(this.context);
+				} else {
+					return new Number(((int)this.value <= (int)((Number)other).value) ? 1 : 0).set_context(this.context);
+				}
+			}
+		}
+		return RTError(((Number)other).pos_start, ((Number)other).pos_end, "Illegal operation", context);
+	}
+	public Object anded_by(Object other) {
+		if (other instanceof Number) {
+			if (this.value instanceof Double) {
+				if (((Number)other).value instanceof Double) {
+					return new Number((((Double)this.value != 0d) && ((Double)((Number)other).value != 0d)) ? 1 : 0).set_context(this.context);
+				} else {
+					return new Number((((Double)this.value != 0d ) && ((int)((Number)other).value != 0)) ? 1 : 0).set_context(this.context);
+				}
+			} else {
+				if (((Number)other).value instanceof Double) {
+					return new Number((((int)this.value != 0) && ((Double)((Number)other).value != 0d)) ? 1 : 0).set_context(this.context);
+				} else {
+					return new Number(((int)this.value != 0 && (int)((Number)other).value != 0) ? 1 : 0).set_context(this.context);
+				}
+			}
+		}
+		return RTError(((Number)other).pos_start, ((Number)other).pos_end, "Illegal operation", context);
+	}
+	public Object ored_by(Object other) {
+		if (other instanceof Number) {
+			if (this.value instanceof Double) {
+				if (((Number)other).value instanceof Double) {
+					return new Number((((Double)this.value != 0d) || ((Double)((Number)other).value != 0d)) ? 1 : 0).set_context(this.context);
+				} else {
+					return new Number((((Double)this.value != 0d) || ((int)((Number)other).value != 0)) ? 1 : 0).set_context(this.context);
+				}
+			} else {
+				if (((Number)other).value instanceof Double) {
+					return new Number((((int)this.value != 0) || ((Double)((Number)other).value != 0d)) ? 1 : 0).set_context(this.context);
+				} else {
+					return new Number(((int)this.value != 0 || (int)((Number)other).value != 0) ? 1 : 0).set_context(this.context);
+				}
+			}
+		}
+		return RTError(((Number)other).pos_start, ((Number)other).pos_end, "Illegal operation", context);
+	}
+	public Object noted() {
+			if (this.value instanceof Double) {
+				return new Number(((Double)this.value == 0) ? 1 : 0).set_context(this.context);
+			} else {
+				return new Number(((int)this.value == 0) ? 1 : 0).set_context(this.context);
+			}
+	}
+
+	public Boolean is_true() {
+			if (this.value instanceof Double) {
+				return ((Double)this.value != 0);
+			} else {
+				return ((int)this.value != 0);
+			}
+	}
+
+	public Number copy() {
+		Number copy = new Number(this.value);
+		copy.set_pos(this.pos_start, this.pos_end);
+		copy.set_context(this.context);
+		return copy;
+	}
+	public String get() {
+		return this.value.toString();
+	}
+	public Double getNum() {
+		if(this.value instanceof Integer) {
+			return Double.parseDouble(""+this.value+".0");
+		}
+		return (double)this.value;
+	}
+}
+//string
+public class StringValue extends BaseClass {
+	private Position pos_start, pos_end;
+	private Context context;
+	private Object value;
+
+	public StringValue (Object value) {
+		this.value = value;
+		this.symbol_table = new HashMap<>();
+		this.symbol_table.put("sub", new BuiltInFunction("sub", new ArrayList<Object>(Arrays.asList(this))));
+	}
+	public void update(StringValue str) {
+		this.value = str.value;
+	}
+
+	public Object added_to (Object other) {
+		try {
+			java.lang.reflect.Method get = other.getClass().getMethod("get");
+			return new StringValue((String)this.value + (String)get.invoke(other));
+		} catch (Exception e) {
+
+		}
+		return RTError(((Number)other).pos_start, ((Number)other).pos_end, "Illegal operation", context);
+	}
+	public Object compression_ee(Object other) {
+		if (other instanceof StringValue) {
+			return new Number((((String)this.value).equals(((StringValue)other).value))? 1 : 0).set_context(this.context);
+		} else if (other instanceof Number) {
+			return new Number(( ((String)this.value).equals(((Number)other).value.toString() ))? 1 : 0).set_context(this.context);
+		}
+		return RTError(((Number)other).pos_start, ((Number)other).pos_end, "Illegal operation", context);
+	}
+	public Object compression_ne(Object other) {
+		if (other instanceof StringValue) {
+			return new Number((((String)this.value).equals(((StringValue)other).value))? 0 : 1).set_context(this.context);
+		} else if (other instanceof Number) {
+			return new Number(( ((String)this.value).equals(((Number)other).value.toString()))? 0 : 1).set_context(this.context);
+		}
+		return RTError(((Number)other).pos_start, ((Number)other).pos_end, "Illegal operation", context);
+	}
+
+	public StringValue set_pos (Position pos_start, Position pos_end) {
+		this.pos_start = pos_start;
+		this.pos_end = pos_end;
+		return this;
+	}
+
+	public StringValue set_context (Context context) {
+		this.context = context;
+		return this;
+	}
+
+	public StringValue copy() {
+		StringValue copy = new StringValue(this.value);
+		copy.set_pos(this.pos_start, this.pos_end);
+		copy.set_context(this.context);
+		return copy;
+	}
+	public String get() {
+		return (String)this.value;
+	}
+	public Double getNum() {
+		if(!((String)this.value).matches("[0-9.]*")){
+			return (double)0;
+		}
+		//if (!((String)this.value).contains(".")) {
+			//return new Number(Integer.parseInt((String)this.value));
+		//} else {
+		return Double.parseDouble((String)this.value);
+		//}
+	}
+}
+//list
+public class List extends BaseClass {
+	private Position pos_start, pos_end;
+	private Context context;
+	public ArrayList<Object> elements;
+
+	public List (ArrayList<Object>elements) {
+		this.elements = elements;
+		this.symbol_table = new HashMap<>();
+		this.symbol_table.put("add", new BuiltInFunction("add", new ArrayList<Object>(Arrays.asList(this))));
+		this.symbol_table.put("del", new BuiltInFunction("del", new ArrayList<Object>(Arrays.asList(this))));
+		this.symbol_table.put("get", new BuiltInFunction("get", new ArrayList<Object>(Arrays.asList(this))));
+		this.symbol_table.put("insert", new BuiltInFunction("insert", new ArrayList<Object>(Arrays.asList(this))));
+		this.symbol_table.put("swap", new BuiltInFunction("swap", new ArrayList<Object>(Arrays.asList(this))));
+	}
+	public void update(List list) {
+		this.elements = new ArrayList<Object>(list.elements);
+	}
+
+	public Object added_to (Object other) {
+		List copy = this.copy();
+		copy.elements.add(other);
+		return copy;
+	}
+	public Object subbed_by (Object other) {
+		if(other instanceof Number && ((Number)other).value instanceof Integer) {
+			List copy = this.copy();
+			try {
+				copy.elements.remove((int)((Number)other).value);
+				return copy;
+			} catch (Exception e) {
+				return RTError(((Number)other).pos_start, ((Number)other).pos_end, "index out of bounds", context);
+			}
+		}
+		return RTError(((Number)other).pos_start, ((Number)other).pos_end, "Illegal operation", context);
+	}
+	public Object multed_by (Object other) {
+		if(other instanceof List) {
+			List copy = this.copy();
+			copy.elements.addAll(((List)other).elements);
+			return copy;
+		}
+		return RTError(((Number)other).pos_start, ((Number)other).pos_end, "Illegal operation", context);
+	}
+	public Object divided_by (Object other) {
+		if(other instanceof Number && ((Number)other).value instanceof Integer) {
+			try {
+				return this.elements.get((int)((Number)other).value);
+			} catch (Exception e) {
+				return RTError(((Number)other).pos_start, ((Number)other).pos_end, "index out of bounds", context);
+			}
+		}
+		return RTError(((Number)other).pos_start, ((Number)other).pos_end, "Illegal operation", context);
+	}
+
+	public List set_pos (Position pos_start, Position pos_end) {
+		this.pos_start = pos_start;
+		this.pos_end = pos_end;
+		return this;
+	}
+	public List set_context (Context context) {
+		this.context = context;
+		return this;
+	}
+
+	public List copy() {
+		ArrayList<Object> new_list = new ArrayList<>(this.elements);
+		List copy = new List(new_list);
+		copy.set_pos(this.pos_start, this.pos_end);
+		copy.set_context(this.context);
+		return copy;
+	}
+	public String get() {
+		String result = "[";
+		int i = 0;
+		try {
+			java.lang.reflect.Method get = this.elements.get(0).getClass().getMethod("get");
+			result = result + (String)get.invoke(this.elements.get(0));
+		} catch (Exception e) {}
+		while(i<this.elements.size()-1) {
+			i++;
+			try {
+				result = result + ", ";
+				java.lang.reflect.Method get = this.elements.get(i).getClass().getMethod("get");
+				result = result + (String)get.invoke(this.elements.get(i));
+			} catch (Exception e) {}
+		}
+		result = result +"]";
+		return result;
+	}
+	public Double getNum() {
+		return (double)0;
+	}
+
+}
+public class BaseClass extends Value {
+	public HashMap<String, Object> symbol_table; //РІ interpreter РІ visit VarAssignNode РЅСѓР¶РЅРѕ РїРѕР»СѓС‡РµРЅРёРµ symbol_table
+}
+//instance
+public class Instance extends BaseClass {
+	private Position pos_start, pos_end;
+	private Context context;
+	public ClassValue parent;
+
+	public Instance (ClassValue parent) {
+		this.parent = parent;
+		this.symbol_table = new HashMap<>();
+	}
+
+	public Instance set_pos (Position pos_start, Position pos_end) {
+		this.pos_start = pos_start;
+		this.pos_end = pos_end;
+		return this;
+	}
+	public Instance copy() {
+		return this;
+	}
+	public Instance set_context (Context context) {
+		this.context = context;
+		return this;
+	}
+}
+//class
+public class ClassValue extends BaseClass {
+	public String name;
+	private Position pos_start, pos_end;
+	private Context context;
+
+	public ClassValue (String name, HashMap<String, Object> symbol_table) {
+		this.name = name;
+		this.symbol_table = new HashMap<>(symbol_table);
+	}
+	public RTResult call (ArrayList<Object> args) {
+		RTResult res = new RTResult();
+		Context exec_ctx = new Context(this.name, this.context, this.pos_start);
+
+		Instance inst = new Instance(this);
+		inst.symbol_table = new HashMap<>(this.symbol_table);
+
+
+		for(String key : inst.symbol_table.keySet()) {
+			Object value = inst.symbol_table.get(key);
+			try {
+				java.lang.reflect.Method copy = value.getClass().getMethod("copy");
+				java.lang.reflect.Method set_context = value.getClass().getMethod("set_context", Context.class);
+				value = copy.invoke(value);
+				value = set_context.invoke(value, exec_ctx);
+				((Value)value).link = value;
+			} catch (Exception e) {_toast("classValue:" + e.toString());}
+			inst.symbol_table.put(key, value);
+		}
+
+		inst.symbol_table.put("this", inst);
+		exec_ctx.symbol_table = new HashMap<>(inst.symbol_table);
+
+		if (inst.symbol_table.containsKey(this.name) && inst.symbol_table.get(this.name) instanceof Function){
+			Function method = (Function)inst.symbol_table.get(this.name);
+			res._register(method.call(args, this.pos_start, this.pos_end));
+			return res.success(inst.set_context(this.context).set_pos(this.pos_start, this.pos_end));
+		} else {
+			return res.failure(RTError(this.pos_start, this.pos_end, "function " + this.name + " is not defined", this.context));
+		}
+	}
+
+	public ClassValue set_pos (Position pos_start, Position pos_end) {
+		this.pos_start = pos_start;
+		this.pos_end = pos_end;
+		return this;
+	}
+	public ClassValue copy() {
+		return this;
+	}
+	public ClassValue set_context (Context context) {
+		this.context = context;
+		return this;
+	}
+}
+//base function
+public class BaseFunction extends Value {
+	public String var_name;
+	public ArrayList<String> args;
+	Position pos_start, pos_end;
+	public Context context;
+
+	public Context generate_new_context() {
+		Context new_context = new Context(this.var_name, this.context, this.pos_start);
+		new_context.symbol_table = new HashMap<>(this.context.symbol_table);
+		return new_context;
+	}
+
+	public RTResult check_args(ArrayList<String> arg_names, ArrayList<Object> args) {
+		RTResult res = new RTResult();
+
+		if(args.size() > arg_names.size()) {
+			return res.failure(RTError(pos_start, pos_end, "too many arguments passed in " + this.var_name + "()", context));
+		}
+		if(args.size() < arg_names.size()) {
+			return res.failure(RTError(pos_start, pos_end, "too few arguments passed in " + this.var_name+ "()", context));
+		}
+		return res.success(0);
+	}
+
+	public void populate_args(ArrayList<String> arg_names, ArrayList<Object> args, Context exec_ctx) {
+		for(int i = 0; i < arg_names.size(); i++) {
+			String arg_name = arg_names.get(i);
+			Object arg_value = args.get(i);
+			exec_ctx.symbol_table.put(arg_name, arg_value);
+		}
+	}
+
+	public RTResult check_and_populate_args(ArrayList<String> arg_names, ArrayList<Object> args, Context exec_ctx) {
+		RTResult res = new RTResult();
+		res._register(this.check_args(arg_names, args));
+		if(res.error_b){return res;}
+		this.populate_args(arg_names, args, exec_ctx);
+		return res.success(0);
+	}
+}
+//function
+public class Function extends BaseFunction {
+	public Object expr;
+
+	public Function(String var_name, ArrayList<String> args, Object expr) {
+		this.var_name = var_name;
+		this.args = args;
+		this.expr = expr;
+	}
+	public void update(Function func) {
+		this.var_name = func.var_name;
+		this.args = new ArrayList<String>(func.args);
+		this.expr = func.expr;
+	}
+	public RTResult call(ArrayList<Object> args, Position pos_start, Position pos_end) {
+		RTResult res = new RTResult();
+		Interpreter interpreter = new Interpreter();
+		Context exec_ctx = this.generate_new_context();
+
+		res._register(this.check_and_populate_args(this.args, args, exec_ctx));
+		if(res.error_b) {return res;}
+		Object value = res._register(interpreter.visit(this.expr, exec_ctx));
+		if(res.error_b) {return res;}
+		return res.success(value);
+	}
+
+	public Function copy() {
+		Function copy = new Function(this.var_name, this.args, this.expr);
+		copy.set_pos(this.pos_start, this.pos_end);
+		copy.set_context(this.context);
+		return copy;
+	}
+
+	public Function set_pos (Position pos_start, Position pos_end) {
+		this.pos_start = pos_start;
+		this.pos_end = pos_end;
+		return this;
+	}
+	public Function set_context (Context context) {
+		this.context = context;
+		return this;
+	}
+
+	public String get() {
+		return "function: " + this.var_name;
+	}
+	public Double getNum() {
+		return (double)0;
+	}
+}
+//built-in function
+public class BuiltInFunction extends BaseFunction {
+	public ArrayList<Object> setup_args;
+	public Boolean setup;
+	public BuiltInFunction(String var_name) {
+		this.var_name = var_name;
+		this.setup = false;
+	}
+	public BuiltInFunction(String var_name, ArrayList<Object> setup_args) {
+		this.var_name = var_name;
+		this.setup_args = new ArrayList<>(setup_args);
+		this.setup = true;
+	}
+	public RTResult call(ArrayList<Object> args, Position pos_start, Position pos_end) {
+		RTResult res = new RTResult();
+		Context exec_ctx = this.generate_new_context();
+		ArrayList<Object> ready_args;
+		if(this.setup) {
+			ready_args = new ArrayList<>(this.setup_args);
+			ready_args.addAll(args);
+		} else {
+			ready_args = args;
+		}
+		try {
+			java.lang.reflect.Method method = this.getClass().getMethod(this.var_name, Context.class);
+			//java.lang.reflect.Method method_arg_names = this.getClass().getMethod(this.var_name+"_get_args");
+
+			//res._register(this.check_and_populate_args((ArrayList<String>)method_arg_names.invoke(this), args, exec_ctx));
+			res._register(this.check_and_populate_args(bfunc_args.get(this.var_name), ready_args, exec_ctx));
+			if(res.error_b) {return res;}
+			Object value = res._register(method.invoke(this, exec_ctx));
+			if(res.error_b) {return res;}
+			return res.success(value);
+		} catch (Exception e) {
+			_toast("call function "+e.toString());
+			return res.success(new Number(0));
+		}
+	}
+	//РїСЂРѕРІРµСЂРєР° Р°СЂРіСѓРјРµРЅС‚Р° РЅР° СЃРѕРѕС‚РІРµС‚СЃС‚РІРёРµ С‚РёРїСѓ РґР°РЅРЅС‹С…
+	public Boolean checkType(String arg_name, String type, Context exec_ctx) {
+		try{
+		if(exec_ctx.symbol_table.get(arg_name).getClass().getSimpleName().equals(type)){
+			return true;
+		}} catch (Exception e) {_toast("check type, bin. func" + e.toString());}
+		return false;
+	}
+	public Integer getArgInt(String arg_name, Context exec_ctx) {
+		try {
+			java.lang.reflect.Method get = exec_ctx.symbol_table.get(arg_name).getClass().getMethod("getNum");
+			return ((Double)get.invoke(exec_ctx.symbol_table.get(arg_name))).intValue();
+		} catch (Exception e) {_toast("get ArgInt" +e.toString()); return 0;}
+	}
+	public BuiltInFunction copy() {
+		BuiltInFunction copy;
+		if (this.setup) {
+			copy = new BuiltInFunction(this.var_name, this.setup_args);
+		} else {
+			copy = new BuiltInFunction(this.var_name);
+		}
+		copy.set_pos(this.pos_start, this.pos_end);
+		copy.set_context(this.context);
+		return copy;
+	}
+	public BuiltInFunction set_pos (Position pos_start, Position pos_end) {
+		this.pos_start = pos_start;
+		this.pos_end = pos_end;
+		return this;
+	}
+	public BuiltInFunction set_context (Context context) {
+		this.context = context;
+		return this;
+	}
+	public String get() {
+		return "built-in function: " + this.var_name;
+	}
+	public Double getNum() {
+		return (double)0;
+	}
+	//##########################
+	//android
+	public RTResult toast(Context exec_ctx) {
+		try {
+			java.lang.reflect.Method get = exec_ctx.symbol_table.get("value").getClass().getMethod("get");
+			_ttoast((String)get.invoke(exec_ctx.symbol_table.get("value")));
+		} catch (Exception e) {}
+		return new RTResult().success(new Number(0));
+	}
+	//events
+	public RTResult onTouch(Context exec_ctx) {
+		if (!(exec_ctx.symbol_table.get("widget") instanceof BaseWidget)) {
+			return new RTResult().failure(RTError(this.pos_start, this.pos_end, "expected type widget in the first argument", exec_ctx));
+		}
+		if (!checkType("function", "Function", exec_ctx)) {
+			return new RTResult().failure(RTError(this.pos_start, this.pos_end, "expected type function in the second argument", exec_ctx));
+		}
+		Function func = (Function)exec_ctx.symbol_table.get("function");
+		_onTouch(func, ((BaseWidget)exec_ctx.symbol_table.get("widget")).view, func.pos_start, func.pos_end);
+		return new RTResult().success(new Number(0));
+	}
+	//canvas
+	public RTResult canvas(Context exec_ctx) {
+		return new RTResult().success(new CanvasWidget());
+	}
+	public RTResult refresh(Context exec_ctx) {
+		if (!(exec_ctx.symbol_table.get("canvas") instanceof CanvasWidget)) {
+			return new RTResult().failure(RTError(this.pos_start, this.pos_end, "expected type canvas in the first argument", exec_ctx));
+		}
+		((CanvasWidget)exec_ctx.symbol_table.get("canvas")).update();
+		return new RTResult().success(new Number(0));
+	}
+	public RTResult drawColor(Context exec_ctx) {
+		if (!checkType("canvas", "CanvasWidget", exec_ctx)) {
+			return new RTResult().failure(RTError(this.pos_start, this.pos_end, "expected type canvas in the first argument", exec_ctx));
+		}
+		int r, g, b;
+		try {
+			r = getArgInt("r", exec_ctx);
+			g = getArgInt("g", exec_ctx);
+			b = getArgInt("b", exec_ctx);
+			((CanvasWidget)(exec_ctx.symbol_table.get("canvas"))).drawColor(r, g, b);
+		} catch (Exception e) {_toast("drawColor() " + e.toString());}
+		return new RTResult().success(new Number(0));
+	}
+	public RTResult setColor(Context exec_ctx) {
+		if (!checkType("canvas", "CanvasWidget", exec_ctx)) {
+			return new RTResult().failure(RTError(this.pos_start, this.pos_end, "expected type canvas in the first argument", exec_ctx));
+		}
+		int r, g, b;
+		try {
+			r = getArgInt("r", exec_ctx);
+			g = getArgInt("g", exec_ctx);
+			b = getArgInt("b", exec_ctx);
+			((CanvasWidget)(exec_ctx.symbol_table.get("canvas"))).setColor(r, g, b);
+		} catch (Exception e) {_toast("setColor() " + e.toString());}
+		return new RTResult().success(new Number(0));
+	}
+	public RTResult setAlpha(Context exec_ctx) {
+		if (!checkType("canvas", "CanvasWidget", exec_ctx)) {
+			return new RTResult().failure(RTError(this.pos_start, this.pos_end, "expected type canvas in the first argument", exec_ctx));
+		}
+		int a;
+		try {
+			a = getArgInt("a", exec_ctx);
+			((CanvasWidget)(exec_ctx.symbol_table.get("canvas"))).paint.setAlpha(a);
+		} catch (Exception e) {_toast("setAlpha() " + e.toString());}
+		return new RTResult().success(new Number(0));
+	}
+	public RTResult drawLine(Context exec_ctx) {
+		if (!checkType("canvas", "CanvasWidget", exec_ctx)) {
+			return new RTResult().failure(RTError(this.pos_start, this.pos_end, "expected type canvas in the first argument", exec_ctx));
+		}
+		int x, y, x2, y2;
+		try {
+			x = getArgInt("x", exec_ctx);
+			y = getArgInt("y", exec_ctx);
+			x2 = getArgInt("x2", exec_ctx);
+			y2 = getArgInt("y2", exec_ctx);
+			((CanvasWidget)(exec_ctx.symbol_table.get("canvas"))).drawLine(x, y, x2, y2);
+		} catch (Exception e) {_toast("drawLine() " + e.toString());}
+		return new RTResult().success(new Number(0));
+	}
+	public RTResult drawCircle(Context exec_ctx) {
+		if (!checkType("canvas", "CanvasWidget", exec_ctx)) {
+			return new RTResult().failure(RTError(this.pos_start, this.pos_end, "expected type canvas in the first argument", exec_ctx));
+		}
+		int x, y, rad;
+		try {
+			x = getArgInt("x", exec_ctx);
+			y = getArgInt("y", exec_ctx);
+			rad = getArgInt("radius", exec_ctx);
+			((CanvasWidget)(exec_ctx.symbol_table.get("canvas"))).drawCircle(x, y, rad);
+		} catch (Exception e) {_toast("drawCircle() " + e.toString());}
+		return new RTResult().success(new Number(0));
+	}
+	public RTResult drawRect(Context exec_ctx) {
+		if (!checkType("canvas", "CanvasWidget", exec_ctx)) {
+			return new RTResult().failure(RTError(this.pos_start, this.pos_end, "expected type canvas in the first argument", exec_ctx));
+		}
+		int x, y, width, height;
+		try {
+			x = getArgInt("x", exec_ctx);
+			y = getArgInt("y", exec_ctx);
+			width = getArgInt("width", exec_ctx);
+			height = getArgInt("height", exec_ctx);
+			((CanvasWidget)(exec_ctx.symbol_table.get("canvas"))).drawRect(x, y, width, height);
+		} catch (Exception e) {_toast("drawRect() " + e.toString());}
+		return new RTResult().success(new Number(0));
+	}
+	public RTResult drawPoint(Context exec_ctx) {
+		if (!checkType("canvas", "CanvasWidget", exec_ctx)) {
+			return new RTResult().failure(RTError(this.pos_start, this.pos_end, "expected type canvas in the first argument", exec_ctx));
+		}
+		int x, y;
+		try {
+			x = getArgInt("x", exec_ctx);
+			y = getArgInt("y", exec_ctx);
+			((CanvasWidget)(exec_ctx.symbol_table.get("canvas"))).drawPoint(x, y);
+		} catch (Exception e) {_toast("drawPoint() " + e.toString());}
+		return new RTResult().success(new Number(0));
+	}
+	public RTResult translate(Context exec_ctx) {
+		if (!checkType("canvas", "CanvasWidget", exec_ctx)) {
+			return new RTResult().failure(RTError(this.pos_start, this.pos_end, "expected type canvas in the first argument", exec_ctx));
+		}
+		int x, y;
+		try {
+			x = getArgInt("x", exec_ctx);
+			y = getArgInt("y", exec_ctx);
+			((CanvasWidget)(exec_ctx.symbol_table.get("canvas"))).mCanvas.translate((float)x, (float)y);
+		} catch (Exception e) {_toast("translate() " + e.toString());}
+		return new RTResult().success(new Number(0));
+	}
+	public RTResult rotate(Context exec_ctx) {
+		if (!checkType("canvas", "CanvasWidget", exec_ctx)) {
+			return new RTResult().failure(RTError(this.pos_start, this.pos_end, "expected type canvas in the first argument", exec_ctx));
+		}
+		int angle;
+		try {
+			angle = getArgInt("angle", exec_ctx);
+			((CanvasWidget)(exec_ctx.symbol_table.get("canvas"))).mCanvas.rotate((float)angle);
+		} catch (Exception e) {_toast("rotate() " + e.toString());}
+		return new RTResult().success(new Number(0));
+	}
+	public RTResult setStyle(Context exec_ctx) {
+		if (!checkType("canvas", "CanvasWidget", exec_ctx)) {
+			return new RTResult().failure(RTError(this.pos_start, this.pos_end, "expected type canvas in the first argument", exec_ctx));
+		}
+		int id;
+		try {
+			id = getArgInt("id", exec_ctx);
+			if(id == 1) {
+				((CanvasWidget)(exec_ctx.symbol_table.get("canvas"))).paint.setStyle(Paint.Style.FILL);
+			} else if(id == 2) {
+				((CanvasWidget)(exec_ctx.symbol_table.get("canvas"))).paint.setStyle(Paint.Style.STROKE);
+			} else {
+				((CanvasWidget)(exec_ctx.symbol_table.get("canvas"))).paint.setStyle(Paint.Style.FILL_AND_STROKE);
+			}
+		} catch (Exception e) {_toast("setStyle() " + e.toString());}
+		return new RTResult().success(new Number(0));
+	}
+	public RTResult setStrokeWidth(Context exec_ctx) {
+		if (!checkType("canvas", "CanvasWidget", exec_ctx)) {
+			return new RTResult().failure(RTError(this.pos_start, this.pos_end, "expected type canvas in the first argument", exec_ctx));
+		}
+		int width;
+		try {
+			width = getArgInt("width", exec_ctx);
+			((CanvasWidget)(exec_ctx.symbol_table.get("canvas"))).paint.setStrokeWidth(width);
+		} catch (Exception e) {_toast("setStrokeWidth() " + e.toString());}
+		return new RTResult().success(new Number(0));
+	}
+	//lists
+	public RTResult add(Context exec_ctx) {
+		if (!(exec_ctx.symbol_table.get("list") instanceof List)) {
+			return new RTResult().failure(RTError(this.pos_start, this.pos_end, "expected type list in the first argument", exec_ctx));
+		}
+		ArrayList<Object> list = ((List)exec_ctx.symbol_table.get("list")).elements;
+		list.add(exec_ctx.symbol_table.get("value"));
+		return new RTResult().success(exec_ctx.symbol_table.get("list"));
+	}
+	public RTResult del(Context exec_ctx) {
+		if (!(exec_ctx.symbol_table.get("list") instanceof List)) {
+			return new RTResult().failure(RTError(this.pos_start, this.pos_end, "expected type list in the first argument", exec_ctx));
+		}
+		try {
+			java.lang.reflect.Method get = exec_ctx.symbol_table.get("id").getClass().getMethod("getNum");
+			int id = ((Double)get.invoke(exec_ctx.symbol_table.get("id"))).intValue();
+			ArrayList<Object> list = ((List)exec_ctx.symbol_table.get("list")).elements;
+			list.remove(id);
+		} catch (Exception e) {_toast("del() " + e.toString());}
+		return new RTResult().success(new Number(0));
+	}
+	public RTResult get(Context exec_ctx) {
+		if (!(exec_ctx.symbol_table.get("list") instanceof List)) {
+			return new RTResult().failure(RTError(this.pos_start, this.pos_end, "expected type list in the first argument", exec_ctx));
+		}
+		try {
+			java.lang.reflect.Method get = exec_ctx.symbol_table.get("id").getClass().getMethod("getNum");
+			int id = ((Double)get.invoke(exec_ctx.symbol_table.get("id"))).intValue();
+			ArrayList<Object> list = ((List)exec_ctx.symbol_table.get("list")).elements;
+			return new RTResult().success(list.get(id));
+		} catch (Exception e) {
+			return new RTResult().success(new Number(0));
+		}
+	}
+	public RTResult swap(Context exec_ctx) {
+		Object list = exec_ctx.symbol_table.get("list");
+		if (!(list instanceof List)) {
+			return new RTResult().failure(RTError(this.pos_start, this.pos_end, "expected type list in the first argument", exec_ctx));
+		}
+		try {
+			int id = getArgInt("id", exec_ctx);
+			int id_2 = getArgInt("id2", exec_ctx);
+			Collections.swap(((List)list).elements, id, id_2);
+			return new RTResult().success(list);
+		} catch (Exception e) {
+			return new RTResult().success(new Number(0));
+		}
+	}
+	//language system
+	public RTResult log(Context exec_ctx) {
+		try {
+			java.lang.reflect.Method get = exec_ctx.symbol_table.get("value").getClass().getMethod("get");
+			_toast((String)get.invoke(exec_ctx.symbol_table.get("value")));
+		} catch (Exception e) {}
+		return new RTResult().success(new Number(0));
+	}
+	public RTResult input(Context exec_ctx) {
+		if (!checkType("function", "Function", exec_ctx)) {
+			return new RTResult().failure(RTError(this.pos_start, this.pos_end, "expected type function in the second argument", exec_ctx));
+		}
+		Function func = (Function)exec_ctx.symbol_table.get("function");
+		_input(func);
+		return new RTResult().success(new Number(0));
+	}
+	public RTResult link(Context exec_ctx) {
+		try {
+			Object val = ((Value)exec_ctx.symbol_table.get("value")).link;
+			return new RTResult().success(val);
+		} catch (Exception e) {_toast(e.toString());}
+		return new RTResult().success(new Number(0));
+	}
+	//math
+	public RTResult cos(Context exec_ctx) {
+		try {
+			java.lang.reflect.Method get = exec_ctx.symbol_table.get("value").getClass().getMethod("getNum");
+			return new RTResult().success(new Number(Math.cos((double)get.invoke(exec_ctx.symbol_table.get("value")))));
+		} catch (Exception e) {}
+		return new RTResult().success(new Number(0));
+	}
+	public RTResult sin(Context exec_ctx) {
+		try {
+			java.lang.reflect.Method get = exec_ctx.symbol_table.get("value").getClass().getMethod("getNum");
+			return new RTResult().success(new Number(Math.sin((double)get.invoke(exec_ctx.symbol_table.get("value")))));
+		} catch (Exception e) {}
+		return new RTResult().success(new Number(0));
+	}
+	public RTResult round(Context exec_ctx) {
+		try {
+			java.lang.reflect.Method get = exec_ctx.symbol_table.get("value").getClass().getMethod("getNum");
+			return new RTResult().success(new Number(Math.round((double)get.invoke(exec_ctx.symbol_table.get("value")))));
+		} catch (Exception e) {}
+		return new RTResult().success(new Number(0));
+	}
+	public RTResult rad(Context exec_ctx) {
+		try {
+			java.lang.reflect.Method get = exec_ctx.symbol_table.get("value").getClass().getMethod("getNum");
+			return new RTResult().success(new Number(Math.toRadians((double)get.invoke(exec_ctx.symbol_table.get("value")))));
+		} catch (Exception e) {}
+		return new RTResult().success(new Number(0));
+	}
+	public RTResult rand(Context exec_ctx) {
+		return new RTResult().success(new Number(Math.random()));
+	}
+	public RTResult len(Context exec_ctx) {
+		Object val = exec_ctx.symbol_table.get("value");
+		if (!(val instanceof List || val instanceof StringValue )) {
+			return new RTResult().failure(RTError(this.pos_start, this.pos_end, "expected type list or string in the first argument", exec_ctx));
+		}
+		try {
+			if (val instanceof List) {
+				ArrayList<Object> list = ((List)val).elements;
+				return new RTResult().success(new Number(list.size()));
+			} else {//string
+				String str = (String)((StringValue)val).value;
+				return new RTResult().success(new Number(str.length()));
+			}
+		} catch (Exception e) {
+			_toast("len() " + e.toString());
+			return new RTResult().success(new Number(0));
+		}
+	}
+	public RTResult sub(Context exec_ctx) {
+		Object val = exec_ctx.symbol_table.get("str");
+		if (!(val instanceof StringValue )) {
+			return new RTResult().failure(RTError(this.pos_start, this.pos_end, "expected type string in the first argument", exec_ctx));
+		}
+		try {
+			int start = getArgInt("start", exec_ctx);
+			int end = getArgInt("end", exec_ctx);
+			String str = (String)((StringValue)val).value;
+			return new RTResult().success(new StringValue(str.substring(start, end)));
+		} catch (Exception e) {
+			_toast("sub() " + e.toString());
+			return new RTResult().success(new Number(0));
+		}
+	}
+	public RTResult insert(Context exec_ctx) {
+		Object val = exec_ctx.symbol_table.get("value");
+		if (!(val instanceof List || val instanceof StringValue )) {
+			return new RTResult().failure(RTError(this.pos_start, this.pos_end, "expected type list or string in the first argument", exec_ctx));
+		}
+		try {
+			int id = getArgInt("id", exec_ctx);
+			ArrayList<Object> list = ((List)val).elements;
+			list.add(id, exec_ctx.symbol_table.get("obj"));
+			return new RTResult().success(val);
+		} catch (Exception e) {
+			_toast("insert() " + e.toString());
+			return new RTResult().success(new Number(0));
+		}
+	}
+	//Typecasting
+	public RTResult numberCast(Context exec_ctx) {
+		try {
+			java.lang.reflect.Method get = exec_ctx.symbol_table.get("value").getClass().getMethod("getNum");
+			return new RTResult().success(new Number((double)get.invoke(exec_ctx.symbol_table.get("value"))));
+		} catch (Exception e) {}
+		return new RTResult().success(new Number(0));
+	}
+	public RTResult stringCast(Context exec_ctx) {
+		try {
+			java.lang.reflect.Method get = exec_ctx.symbol_table.get("value").getClass().getMethod("get");
+			return new RTResult().success(new StringValue((String)get.invoke(exec_ctx.symbol_table.get("value"))));
+		} catch (Exception e) {}
+		return new RTResult().success(new Number(0));
+	}
+}
+//arguments setup
+public HashMap<String, ArrayList<String>> setup_arguments() {
+	HashMap<String, ArrayList<String>> res = new HashMap<>();
+	res.put("toast", new ArrayList<String>(Arrays.asList("value")));
+	res.put("log", new ArrayList<String>(Arrays.asList("value")));
+	res.put("input", new ArrayList<String>(Arrays.asList("function")));
+	res.put("canvas", new ArrayList<String>());
+	res.put("link", new ArrayList<String>(Arrays.asList("value")));
+	res.put("drawColor", new ArrayList<String>(Arrays.asList("canvas", "r", "g", "b")));
+	res.put("setColor", new ArrayList<String>(Arrays.asList("canvas", "r", "g", "b")));
+	res.put("setAlpha", new ArrayList<String>(Arrays.asList("canvas", "a")));
+	res.put("setStyle", new ArrayList<String>(Arrays.asList("canvas", "id")));
+	res.put("setStrokeWidth", new ArrayList<String>(Arrays.asList("canvas", "width")));
+	res.put("drawLine", new ArrayList<String>(Arrays.asList("canvas", "x", "y", "x2", "y2")));
+	res.put("drawCircle", new ArrayList<String>(Arrays.asList("canvas", "x", "y", "radius")));
+	res.put("drawRect", new ArrayList<String>(Arrays.asList("canvas", "x", "y", "width", "height")));
+	res.put("drawPoint", new ArrayList<String>(Arrays.asList("canvas", "x", "y")));
+	res.put("translate", new ArrayList<String>(Arrays.asList("canvas", "x", "y")));
+	res.put("rotate", new ArrayList<String>(Arrays.asList("canvas", "angle")));
+	res.put("refresh", new ArrayList<String>(Arrays.asList("canvas")));
+	res.put("add", new ArrayList<String>(Arrays.asList("list", "value")));
+	res.put("del", new ArrayList<String>(Arrays.asList("list", "id")));
+	res.put("get", new ArrayList<String>(Arrays.asList("list", "id")));
+	res.put("swap", new ArrayList<String>(Arrays.asList("list", "id", "id2")));
+	res.put("sub", new ArrayList<String>(Arrays.asList("str", "start", "end")));
+	res.put("cos", new ArrayList<String>(Arrays.asList("value")));
+	res.put("sin", new ArrayList<String>(Arrays.asList("value")));
+	res.put("round", new ArrayList<String>(Arrays.asList("value")));
+	res.put("rand", new ArrayList<String>());
+	res.put("rad", new ArrayList<String>(Arrays.asList("value")));
+	res.put("onTouch", new ArrayList<String>(Arrays.asList("widget", "function")));
+	res.put("len", new ArrayList<String>(Arrays.asList("value")));
+	res.put("insert", new ArrayList<String>(Arrays.asList("value", "id", "obj")));
+	res.put("stringCast", new ArrayList<String>(Arrays.asList("value")));
+	res.put("numberCast", new ArrayList<String>(Arrays.asList("value")));
+	return res;
+}
+//base module
+public class BaseModule extends BaseClass {
+	private Position pos_start, pos_end;
+	private Context context;
+	public String name;
+
+	public BaseModule set_pos (Position pos_start, Position pos_end) {
+		this.pos_start = pos_start;
+		this.pos_end = pos_end;
+		return this;
+	}
+	public BaseModule set_context (Context context) {
+		this.context = context;
+		return this;
+	}
+	public String get() {
+		return "module: " + this.name;
+	}
+	public Double getNum() {
+		return (double)0;
+	}
+}
+public class MathModule extends BaseModule {
+	public MathModule () {
+		this.name = "math";
+
+		this.symbol_table = new HashMap<>();
+		this.symbol_table.put("cos", new BuiltInFunction("cos"));
+		this.symbol_table.put("sin", new BuiltInFunction("sin"));
+		this.symbol_table.put("rad", new BuiltInFunction("rad"));
+		this.symbol_table.put("round", new BuiltInFunction("round"));
+		this.symbol_table.put("rand", new BuiltInFunction("rand"));
+		this.symbol_table.put("pi", new Number(Math.PI));
+	}
+}
+//base widget (view)
+public class BaseWidget extends BaseClass {
+	private Position pos_start, pos_end;
+	private Context context;
+	public String type;
+	public View view;
+
+	public BaseWidget set_pos (Position pos_start, Position pos_end) {
+		this.pos_start = pos_start;
+		this.pos_end = pos_end;
+		return this;
+	}
+	public BaseWidget set_context (Context context) {
+		this.context = context;
+		return this;
+	}
+	public String get() {
+		return "widget: " + this.type;
+	}
+	public Double getNum() {
+		return (double)0;
+	}
+}
+//canvas
+public class CanvasWidget extends BaseWidget {
+	public Bitmap mBitmap;
+	public Canvas mCanvas;
+	public Paint paint;
+	public ImageView img;
+
+	public CanvasWidget() {
+		try {
+		this.mBitmap = Bitmap.createBitmap(SketchwareUtil.getDisplayWidthPixels(getApplicationContext()), SketchwareUtil.getDisplayHeightPixels(getApplicationContext()), Bitmap.Config.ARGB_8888);
+		this.mCanvas = new Canvas(this.mBitmap);
+		this.paint = new Paint();
+		this.img = (ImageView)_getImg();
+		this.img.setImageBitmap(this.mBitmap);
+		_addView(this.img); //(instantly add view on display)
+		_setHeight(this.img, SketchwareUtil.getDisplayHeightPixels(getApplicationContext()), SketchwareUtil.getDisplayWidthPixels(getApplicationContext())); //default size - full screen
+		this.type = "canvas"; //name in language
+		this.view = this.img;
+		} catch (Exception e) {
+			_toast("canvas init " + e.toString());
+		}
+		this.symbol_table = new HashMap<>();
+
+		this.symbol_table.put("onTouch", new BuiltInFunction("onTouch", new ArrayList<Object>(Arrays.asList(this))));
+		this.symbol_table.put("refresh", new BuiltInFunction("refresh", new ArrayList<Object>(Arrays.asList(this))));
+		this.symbol_table.put("setColor", new BuiltInFunction("setColor", new ArrayList<Object>(Arrays.asList(this))));
+		this.symbol_table.put("setAlpha", new BuiltInFunction("setAlpha", new ArrayList<Object>(Arrays.asList(this))));
+		this.symbol_table.put("drawLine", new BuiltInFunction("drawLine", new ArrayList<Object>(Arrays.asList(this))));
+		this.symbol_table.put("setStyle", new BuiltInFunction("setStyle", new ArrayList<Object>(Arrays.asList(this))));
+		this.symbol_table.put("setStrokeWidth", new BuiltInFunction("setStrokeWidth", new ArrayList<Object>(Arrays.asList(this))));
+		this.symbol_table.put("drawColor", new BuiltInFunction("drawColor", new ArrayList<Object>(Arrays.asList(this))));
+		this.symbol_table.put("drawCircle", new BuiltInFunction("drawCircle", new ArrayList<Object>(Arrays.asList(this))));
+		this.symbol_table.put("drawRect", new BuiltInFunction("drawRect", new ArrayList<Object>(Arrays.asList(this))));
+		this.symbol_table.put("drawPoint", new BuiltInFunction("drawPoint", new ArrayList<Object>(Arrays.asList(this))));
+		this.symbol_table.put("translate", new BuiltInFunction("translate", new ArrayList<Object>(Arrays.asList(this))));
+		this.symbol_table.put("rotate", new BuiltInFunction("rotate", new ArrayList<Object>(Arrays.asList(this))));
+		this.symbol_table.put("width", gcontext.symbol_table.get("displayWidth"));
+		this.symbol_table.put("height", gcontext.symbol_table.get("displayHeight"));
+		this.symbol_table.put("scale", new Number(1));
+	}
+	public void update() {
+		this.img.setImageBitmap(this.mBitmap);
+		this.img.invalidate();
+	}
+	public void drawColor(int r, int g, int b) {
+		this.mCanvas.drawColor(Color.rgb(r, g, b));
+	}
+	public void drawLine(int x, int y, int x2, int y2) {
+		this.mCanvas.drawLine((float)x, (float)y, (float)x2, (float)y2, this.paint);
+	}
+	public void drawCircle(int x, int y, int rad) {
+		this.mCanvas.drawCircle((float)x, (float)y, (float)rad, this.paint);
+	}
+	public void drawRect(int x, int y, int width, int height) {
+		this.mCanvas.drawRect((float)x, (float)y, (float)(x+width), (float)(y+height), this.paint);
+	}
+	public void drawPoint(int x, int y) {
+		this.mCanvas.drawPoint((float)x, (float)y, this.paint);
+	}
+	public void setColor(int r, int g, int b) {
+		this.paint.setColor(Color.rgb(r, g, b));
+	}
+}
+final HashMap<String, ArrayList<String>> bfunc_args = setup_arguments();
+//####################
+//CONTEXT
+//####################
+public class Context {
+	String display_name;
+	Context parent;
+	Position parent_entry_pos;
+	Boolean parent_b;
+	HashMap<String, Object> symbol_table;
+
+	public Context(String display_name) {
+		this.display_name = display_name;
+		this.parent_b = false;
+		symbol_table = new HashMap<>();
+	}
+	public Context(String display_name, Context parent, Position parent_entry_pos) {
+		this.display_name = display_name;
+		this.parent = parent;
+		this.parent_b = true;
+		this.symbol_table = new HashMap<>(parent.symbol_table);
+		this.parent_entry_pos = parent_entry_pos;
+	}
+	public Context copy() {
+		Context copy = new Context(this.display_name);
+		if(this.have_parent()) {
+			copy.parent_b = true;
+			copy.parent_entry_pos = this.parent_entry_pos;
+			copy.parent = this.parent;
+		}
+		copy.symbol_table = new HashMap<>(this.symbol_table);
+		return copy;
+	}
+	public Boolean have_parent() {
+		return this.parent_b;
+	}
+}
+//####################
+//INTERPRETER
+//####################
+public class Interpreter {
+	public RTResult visit (Object node, Context context) {
+		try {
+			java.lang.reflect.Method method = this.getClass().getMethod("visit_" + node.getClass().getSimpleName(), node.getClass(), Context.class);
+			return (RTResult)method.invoke(this, node, context);
+		} catch (Exception e) {}
+		return no_visit_method(node, context);
+	}
+	public RTResult no_visit_method (Object node, Context context) {
+		return new RTResult().success(new Number(0));
+	}
+	///////////////////////////
+	public RTResult visit_NumberNode(NumberNode node, Context context) {
+		RTResult res = new RTResult();
+		Number value = new Number(node.tok.value);
+		value.set_pos(node.pos_start, node.pos_end);
+		value.set_context(context);
+		value.link = value;
+		res.success(value);
+		return res;
+	}
+	public RTResult visit_StringNode(StringNode node, Context context) {
+		RTResult res = new RTResult();
+		Object value = new StringValue(node.tok.value);
+		if (node.child != null) {
+			if (!(value instanceof BaseClass)) {
+				return res.failure(RTError(node.pos_start, node.pos_end, "value must be instance of class or class", context));
+			}
+			String name = "";
+			if (value instanceof ClassValue){
+				name = ((ClassValue)value).name;
+			} else if (value instanceof Instance) {
+				name = ((Instance)value).parent.name;
+			} else if (value instanceof List) {
+				name = "$list";
+			} else if (value instanceof StringValue) {
+				name = "$string";
+			}
+			Context new_context = new Context(name, context, node.pos_start);
+			new_context.symbol_table.putAll(((BaseClass)value).symbol_table);
+			Object child = res._register(this.visit(node.child, new_context));
+			if(res.error_b) {return res;}
+
+			value = child;
+		}
+		try {
+			java.lang.reflect.Method copy = value.getClass().getMethod("copy");
+			java.lang.reflect.Method set_pos = value.getClass().getMethod("set_pos", Position.class, Position.class);
+			java.lang.reflect.Method set_context = value.getClass().getMethod("set_context", Context.class);
+			value = copy.invoke(value);
+			value = set_context.invoke(value, context);
+			value = set_pos.invoke(value, node.pos_start, node.pos_end);
+			((Value)value).link = value;
+		} catch (Exception e) {_toast("visitListNode err");}
+		res.success(value);
+		return res;
+	}
+	public RTResult visit_ListNode(ListNode node, Context context) {
+		RTResult res = new RTResult();
+		ArrayList<Object>elements = new ArrayList<>();
+		for(int i = 0; i < node.elements.size(); i++) {
+			Object element = res._register(this.visit(node.elements.get(i), context));
+			if(res.error_b){return res;}
+			elements.add(element);
+		}
+		Object value = new List(elements);
+		if (node.child != null) {
+			if (!(value instanceof BaseClass)) {
+				return res.failure(RTError(node.pos_start, node.pos_end, "value must be instance of class or class", context));
+			}
+			String name = "";
+			if (value instanceof ClassValue){
+				name = ((ClassValue)value).name;
+			} else if (value instanceof Instance) {
+				name = ((Instance)value).parent.name;
+			} else if (value instanceof List) {
+				name = "$list";
+			} else if (value instanceof StringValue) {
+				name = "$string";
+			}
+			Context new_context = new Context(name, context, node.pos_start);
+			new_context.symbol_table.putAll(((BaseClass)value).symbol_table);
+			Object child = res._register(this.visit(node.child, new_context));
+			if(res.error_b) {return res;}
+
+			value = child;
+		}
+
+		try {
+			java.lang.reflect.Method copy = value.getClass().getMethod("copy");
+			java.lang.reflect.Method set_pos = value.getClass().getMethod("set_pos", Position.class, Position.class);
+			java.lang.reflect.Method set_context = value.getClass().getMethod("set_context", Context.class);
+			value = copy.invoke(value);
+			value = set_context.invoke(value, context);
+			value = set_pos.invoke(value, node.pos_start, node.pos_end);
+			((Value)value).link = value;
+		} catch (Exception e) {_toast("visitListNode err");}
+		return res.success(value);
+	}
+	public RTResult visit_FuncDefNode(FuncDefNode node, Context context) {
+		RTResult res = new RTResult();
+		String var_name = "$function";
+		if(!node.noname) {
+			var_name = (String) node.var_name.value;
+		}
+		Object expr = node.expr;
+		ArrayList<String> args_names =  new ArrayList<>();
+		for(int i = 0; i < node.args.size(); i++) {
+			args_names.add((String)node.args.get(i).value);
+		}
+		Function func = new Function(var_name, args_names, expr);
+		func.set_pos(node.pos_start, node.pos_end);
+		func.set_context(context);
+		func.link = func;
+		if(!node.noname) {
+			context.symbol_table.put(var_name, func);
+		}
+		return res.success(func);
+	}
+	public RTResult visit_CallNode(CallNode node, Context context) {
+		RTResult res = new RTResult();
+		try {
+		Object value_to_call;
+		ArrayList<Object> args = new ArrayList<>();
+		Object value = res._register(this.visit(node.node_to_call, context));
+		if(res.error_b){return res;}
+		if(value instanceof Function) {
+			Function value_to_cal = (Function)value;
+			value_to_call = value_to_cal.copy().set_pos(node.pos_start, node.pos_end);
+		} else if(value instanceof BuiltInFunction) {
+			BuiltInFunction value_to_cal = (BuiltInFunction)value;
+			value_to_call = value_to_cal.copy().set_pos(node.pos_start, node.pos_end).set_context(context);
+		} else if(value instanceof ClassValue) {
+			ClassValue value_to_cal = (ClassValue)value;
+			value_to_call = value_to_cal.copy().set_pos(node.pos_start, node.pos_end).set_context(context);
+		} else {
+			_toast("visit cn:" + value.toString());
+			return res.failure(RTError(node.pos_start, node.pos_end, "only functions can be called", context));
+		}
+
+		for(int i = 0; i < node.args.size(); i++) {
+			Object arg_node = node.args.get(i);
+			args.add(res._register(this.visit(arg_node, context)));
+			if(res.error_b){return res;}
+		}
+		Object return_value;
+		if(value instanceof Function) {
+			return_value = res._register(((Function)value_to_call).call(args, node.pos_start, node.pos_end));
+		} else if (value instanceof BuiltInFunction) {
+			return_value = res._register(((BuiltInFunction)value_to_call).call(args, node.pos_start, node.pos_end));
+		} else {
+			return_value = res._register(((ClassValue)value_to_call).call(args));
+		}
+
+		if(res.error_b) {
+			return res;
+		}
+		return res.success(return_value);
+		} catch (Exception e) {_toast("a1 " + e.toString());}
+		return res.success(new Number (0));
+	}
+	public RTResult visit_VarAccessNode(VarAccessNode node, Context context) {
+		RTResult res = new RTResult();
+		String var_name = (String) node.var_name_tok.value;
+		if(context.symbol_table.containsKey(var_name) || gcontext.symbol_table.containsKey(var_name)) {
+			try {
+				Object value;
+				if (context.symbol_table.containsKey(var_name)){
+					value = ((Value)context.symbol_table.get(var_name));
+				} else {
+					value = ((Value)gcontext.symbol_table.get(var_name));
+				}
+				if (node.child != null) {
+					if (!(value instanceof BaseClass)) {
+						return res.failure(RTError(node.pos_start, node.pos_end, "value must be instance of class or class", context));
+					}
+					String name = "$child";
+					if (value instanceof ClassValue){
+						name = ((ClassValue)value).name;
+					} else if (value instanceof Instance) {
+						name = ((Instance)value).parent.name;
+					} else if (value instanceof List) {
+						name = "$list";
+					} else if (value instanceof StringValue) {
+						name = "$string";
+					} else if (value instanceof BaseWidget) {
+						name = "$" + ((BaseWidget)value).type;
+					} else if (value instanceof BaseModule) {
+						name = "$" + ((BaseModule)value).name;
+					}
+					Context new_context = new Context(name, context, node.pos_start);
+					new_context.symbol_table.putAll(((BaseClass)value).symbol_table);
+					Object child = res._register(this.visit(node.child, new_context));
+					if(res.error_b) {return res;}
+
+					value = child;
+				}
+				try {
+				java.lang.reflect.Method copy = value.getClass().getMethod("copy");
+				java.lang.reflect.Method set_pos = value.getClass().getMethod("set_pos", Position.class, Position.class);
+				value = copy.invoke(value);
+				value = set_pos.invoke(value, node.pos_start, node.pos_end);
+				((Value)value).link = ((Value)context.symbol_table.get(var_name)).link;
+				} catch (Exception e) {
+					_toast("VarAccessNode: " + e.toString());
+				}
+				return res.success(value);
+			} catch (Exception e) {_toast(" visit var access node\n" + e.toString()); return res.success(0);}
+		} else {
+			String str = "";
+			for (String key : context.symbol_table.keySet()){
+				str = str + key + ", ";
+			}
+			_toast(str);
+			return res.failure(RTError(node.pos_start, node.pos_end, var_name+" is not defined", context));
+		}
+	}
+	public RTResult visit_ForNode(ForNode node, Context context) {
+		RTResult res = new RTResult();
+		Context new_ctx = new Context("for loop", context, node.pos_start);
+		new_ctx.symbol_table = new HashMap<>(context.symbol_table);
+
+		Object from = res._register(this.visit(node.from, new_ctx));
+		if(res.error_b){return res;}
+
+		Object to = res._register(this.visit(node.to, new_ctx) );
+		if(res.error_b){return res;}
+
+		Object i = from;
+		String var_name = (String)node.var.value;
+		Boolean was = false;
+
+		while(((Number)((Number)i).compression_lte(to)).is_true()) {
+			new_ctx.symbol_table.put(var_name, (Number)i);
+			i = ((Number)i).added_to(new Number(1));
+			res._register(this.visit(node.expr, new_ctx.copy()));
+			if(res.error_b){return res;}
+			was = true;
+		}
+		if(!was) {
+		while(((Number)((Number)i).compression_gte(to)).is_true()) {
+			new_ctx.symbol_table.put(var_name, (Number)i);
+			i = ((Number)i).subbed_by(new Number(1));
+			res._register(this.visit(node.expr, new_ctx.copy()));
+			if(res.error_b){return res;}
+		}
+		}
+		return res.success(new Number(0));
+	}
+	public RTResult visit_WhileNode(WhileNode node, Context context) {
+		RTResult res = new RTResult();
+
+		while(true) {
+			Object condition = res._register(this.visit(node.condition, context));
+			if(res.error_b){return res;}
+			if(!((Number)condition).is_true()){break;}
+
+			Object expr = res._register(this.visit(node.expr, context));
+			if(res.error_b){return res;}
+		}
+		return res.success(new Number(0));
+	}
+	public RTResult visit_IfNode(IfNode node, Context context) {
+		RTResult res = new RTResult();
+
+		for(int i = 0; i < node.conditions.size(); i++) {
+			Object condition_value = res._register(this.visit(node.conditions.get(i), context));
+			if(res.error_b){return res;}
+			if (((Number)condition_value).is_true()) {
+				Object expr_value = res._register(this.visit(node.expressions.get(i), context));
+				if(res.error_b){return res;}
+				return res.success(expr_value);
+			}
+		}
+		if (node.else_b) {
+			Object else_value = res._register(this.visit(node.else_case, context));
+			if(res.error_b){return res;}
+			return res.success(else_value);
+		}
+		return res.success(new Number(0));
+	}
+	public RTResult visit_VarAssignNode(VarAssignNode node, Context context) {
+		RTResult res = new RTResult();
+		String var_name = (String)node.var_name_tok.value;
+		Object value = res._register(this.visit(node.value_node, context));
+		if(res.error_b){return res;}
+		((Value)value).link = value;
+		_toast("visit:VarAssignNode");
+
+		if (node.names.size() != 0) {
+			_toast("van start");
+			if(context.symbol_table.containsKey(var_name) || gcontext.symbol_table.containsKey(var_name)) {
+				Object nd;
+				Object prev = 0;
+				try {
+					nd = context.symbol_table.get(var_name);
+				} catch (Exception e) {
+					nd = gcontext.symbol_table.get(var_name);
+				}
+
+				String name = "";
+				for(int i = 0; i < node.names.size(); i++) {
+					name = (String)(node.names.get(i)).value;
+
+					if (!(nd instanceof BaseClass)) {
+						return res.failure(RTError(node.pos_start, node.pos_end, "value must be instance of class or class", context));
+					}
+
+					prev = nd;
+					if (!(((BaseClass)nd).symbol_table.containsKey(name)) && i != node.names.size()-1) {
+						return res.failure(RTError(node.pos_start, node.pos_end, name + " is not defined", context));
+					} else {
+						nd = ((BaseClass)nd).symbol_table.get(name);
+					}
+				}
+				((BaseClass)prev).symbol_table.put(name, value);
+				return res.success(value);
+			} else {
+				_toast("99990");
+				String str = "";
+				for (String key : context.symbol_table.keySet()){
+					str = str + "." + key;
+				}
+				_toast(str);
+				return res.failure(RTError(node.pos_start, node.pos_end, var_name + " is not defined", context));
+			}
+		}
+
+		if(context.symbol_table.containsKey(var_name) || gcontext.symbol_table.containsKey(var_name)) {//РµСЃР»Рё РїРµСЂРµРјРµРЅРЅР°СЏ СѓР¶Рµ РѕР±СЉСЏРІР»РµРЅР°, С‚Рѕ РѕР±РЅРѕРІР»СЏРµРј
+			Object old;
+			try {
+				old = context.symbol_table.get(var_name);
+			} catch (Exception e) {
+				old = gcontext.symbol_table.get(var_name);
+			}
+			if (node.type == TT_ME) { //-=
+				try {
+					java.lang.reflect.Method sub = old.getClass().getMethod("subbed_by", Object.class);
+					java.lang.reflect.Method update = old.getClass().getMethod("update", value.getClass());
+					update.invoke(old, sub.invoke(old, value));
+				} catch (Exception e) {_toast("decrease " + e.toString());}
+			} else if (node.type == TT_PE) { //+=
+				try {
+					java.lang.reflect.Method add = old.getClass().getMethod("added_to", Object.class);
+					java.lang.reflect.Method update = old.getClass().getMethod("update", value.getClass());
+					update.invoke(old, add.invoke(old, value));
+				} catch (Exception e) {_toast("increase " + e.toString());}
+			} else {
+				try {
+					java.lang.reflect.Method update = old.getClass().getMethod("update", value.getClass());
+					update.invoke(old, value);
+				} catch (Exception e) {}
+			}
+		} else {//РёРЅР°С‡Рµ - СЃРѕР·РґР°С‘Рј РЅРѕРІСѓСЋ РїРµСЂРµРјРµРЅРЅСѓСЋ
+			if (node.type == TT_ME || node.type == TT_PE) { //РµСЃР»Рё +=, -=
+				 return res.failure(RTError(node.pos_start, node.pos_end, var_name + " is not defined", context));
+			}
+			if (node.local) { //СЂР°Р·РґРµР»РµРЅРёРµ РЅР° Р»РѕРєР°Р»СЊРЅС‹Рµ/РіР»РѕР±Р°Р»СЊРЅС‹Рµ РїРµСЂРµРјРµРЅРЅС‹Рµ
+				context.symbol_table.put(var_name, value);
+			} else {
+				gcontext.symbol_table.put(var_name, value);
+			}
+		}
+		return res.success(value);
+	}
+	public RTResult visit_BinOpNode(BinOpNode node, Context context) {
+		RTResult res = new RTResult();
+		HashMap<String, String> funcs = new HashMap<>();
+		funcs.put("PLUS", "added_to");
+		funcs.put("MINUS", "subbed_by");
+		funcs.put("MUL", "multed_by");
+		funcs.put("DIV", "divided_by");
+		funcs.put("POW", "powed_by");
+		funcs.put("EE", "compression_ee");
+		funcs.put("NE", "compression_ne");
+		funcs.put("GT", "compression_gt");
+		funcs.put("LT", "compression_lt");
+		funcs.put("GTE", "compression_gte");
+		funcs.put("LTE", "compression_lte");
+		funcs.put("AND", "anded_by");
+		funcs.put("OR", "ored_by");
+
+		Object left = res._register(this.visit(node.left_node, context));
+		if (res.error_b) {
+			return res;
+		}
+		Object right = res._register(this.visit(node.right_node, context));
+		if (res.error_b) {
+			return res;
+		}
+		Object result;
+		try {
+			java.lang.reflect.Method method = left.getClass().getMethod(funcs.get(node.tok.type), Object.class);
+			result = method.invoke(left, right);
+		} catch (Exception e) {
+			return res.failure(RTError(node.pos_start, node.pos_end, "Illegal operation", context));
+		}
+		if (result instanceof Error) {
+			return res.failure(result);
+		} else {
+			try {
+				java.lang.reflect.Method set_pos = result.getClass().getMethod("set_pos", Position.class, Position.class);
+				set_pos.invoke(result, node.pos_start, node.pos_end);
+			} catch (Exception e) {}
+			return res.success(result);
+		}
+	}
+	public RTResult visit_UnaryOpNode(UnaryOpNode node, Context context) {
+		RTResult res = new RTResult();
+		Object number = res._register(this.visit(node.node, context));
+		if (res.error_b) {return res;}
+		if (node.op_tok.type == TT_MINUS) {
+			number = ((Number)number).multed_by(-1);
+		} else if (node.op_tok.type == TT_NOT) {
+			number = ((Number)number).noted();
+		}
+		if (number instanceof Error) {
+			return res.failure(number);
+		} else {
+			((Number)number).set_pos(node.pos_start, node.pos_end);
+			return res.success(number);
+		}
+	}
+	public RTResult visit_ClassNode(ClassNode node, Context context) {
+		RTResult res = new RTResult();
+
+		String name = (String)node.class_name.value;
+		Context ctx = new Context(name, context, node.pos_start);
+		ctx.symbol_table = new HashMap<String, Object>(context.symbol_table);
+
+		res._register(this.visit(node.body_nodes, ctx));
+		ClassValue cls = new ClassValue(name, ctx.symbol_table).set_context(context).set_pos(node.pos_start, node.pos_end);
+		gcontext.symbol_table.put(name, cls);
+		return res.success(cls);
+	}
+}
+//####################
+//RUN
+//####################
+Context gcontext; //РіР»РѕР±Р°Р»СЊРЅС‹Р№ РєРѕРЅС‚РµРєСЃС‚
+public void setup_nimble() {
+	gcontext = new Context("$program"); //СЃРѕР·РґР°С‘Рј РЅРѕРІС‹Р№, РІСЃРµ РїРµСЂРµРјРµРЅРЅС‹Рµ СѓРґР°Р»СЏС‚СЃСЏ!
+	//modules
+	gcontext.symbol_table.put("math", new MathModule());
+	//constants
+	gcontext.symbol_table.put("true", new Number(1));
+	gcontext.symbol_table.put("false", new Number(0));
+	gcontext.symbol_table.put("null", new Number(0));
+
+	gcontext.symbol_table.put("event.start", new Number(0));
+	gcontext.symbol_table.put("event.end", new Number(1));
+	gcontext.symbol_table.put("event.move", new Number(2));
+	gcontext.symbol_table.put("math.pi", new Number(3.1415926535897932384f));
+	//android
+	gcontext.symbol_table.put("toast", new BuiltInFunction("toast"));
+	gcontext.symbol_table.put("canvas", new BuiltInFunction("canvas"));
+	//language system
+	gcontext.symbol_table.put("log", new BuiltInFunction("log"));
+	gcontext.symbol_table.put("input", new BuiltInFunction("input"));
+	gcontext.symbol_table.put("link", new BuiltInFunction("link"));
+	gcontext.symbol_table.put("del", new BuiltInFunction("del"));
+	gcontext.symbol_table.put("add", new BuiltInFunction("add"));
+	gcontext.symbol_table.put("get", new BuiltInFunction("get"));
+	gcontext.symbol_table.put("len", new BuiltInFunction("len"));
+	gcontext.symbol_table.put("insert", new BuiltInFunction("insert"));
+	//variables
+	gcontext.symbol_table.put("string", new BuiltInFunction("stringCast"));
+	gcontext.symbol_table.put("number", new BuiltInFunction("numberCast"));
+}
+public String nimble(String code) {
+	Object tokens;
+	Object ast;
+	RTResult result;
+	//lexer
+	try {
+		Lexer lexer = new Lexer(code);
+		tokens = lexer.make_tokens();
+		if (tokens instanceof Error) {return ((Error)tokens).toString();}
+	} catch (Exception e) {_toast("lexer " + e.toString()); return "";}
+
+	//parser
+	try {
+		Parser parser = new Parser((ArrayList<Token>)tokens);
+		ast = parser.parse();
+		if (((ParseResult)ast).error_b) {_toast(((Error)((ParseResult)ast).error).toString()); return ((Error)((ParseResult)ast).error).toString();}
+	} catch (Exception e) {_toast("parser " + e.toString()); return "";}
+
+	//interpreter
+	try {
+		Interpreter interpreter = new Interpreter();
+		result = interpreter.visit(((ParseResult)ast).node, gcontext);
+		if (result.error_b) {_toast("interpreter "+result.error.toString()); return result.error.toString();}
+	} catch (Exception e) {_toast("interpreter " + e.toString()); return "";}
+
+	//return
+	try {
+		java.lang.reflect.Method get = result.value.getClass().getMethod("get");
+		return (String)get.invoke(result.value);
+	} catch (Exception e) {
+		return "";
+	}
+}

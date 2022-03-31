@@ -9,7 +9,7 @@ import java.util.ArrayList;
 
 public class Main {
     public static void main(String args[]) throws IOException {
-        String code = Files.readString(Path.of("src/main.txt"), Charset.defaultCharset());
+        String code = Files.readString(Path.of("src/main.imb"), Charset.defaultCharset());
         System.out.println("Lexer:");
         Either lexerResult = new Lexer(code).generateTokens();
         if (lexerResult.error()) {

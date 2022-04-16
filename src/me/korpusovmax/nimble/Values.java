@@ -1,5 +1,7 @@
 package me.korpusovmax.nimble;
 
+import java.util.ArrayList;
+
 public class Values {
     public static class BaseValue {
         public Position posStart, posEnd;
@@ -169,6 +171,25 @@ public class Values {
 
         public java.lang.String toString() {
             return value;
+        }
+    }
+    public static class List extends BaseValue implements Value {
+        public ArrayList<Value> elements;
+
+        public List(ArrayList<Value> elements) {
+            this.elements = elements;
+        }
+
+        @Override
+        public java.lang.String toString() {
+            java.lang.String result = "[";
+            for (Value i : elements) {
+                result = result + i.toString() + ", ";
+            }
+            if (elements.size() > 0) {
+                result = result.substring(0, result.length() - 2);
+            }
+            return result + "]";
         }
     }
 }

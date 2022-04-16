@@ -2,7 +2,7 @@ package me.korpusovmax.nimble;
 
 public class ParseResult {
     public Either state; //the parsing result (ast (Node)/error)
-    private int advanceCount, reverseCount;
+    public int advanceCount, reverseCount;
     public ParseResult() {
         state = Either.error(null);
     }

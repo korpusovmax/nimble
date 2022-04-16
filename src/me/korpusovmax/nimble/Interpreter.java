@@ -1,5 +1,6 @@
 package me.korpusovmax.nimble;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 
 public class Interpreter {
@@ -7,7 +8,9 @@ public class Interpreter {
         try {
             java.lang.reflect.Method method = this.getClass().getMethod("visit" + nodeToVisit.getClass().getSimpleName(), nodeToVisit.getClass());
             return (Either) method.invoke(this, nodeToVisit);
-        } catch (Exception e) {}
+        } catch (Exception e) {
+            //System.out.println(e.toString());
+        }
         return Either.error(new Errors.RuntimeError(nodeToVisit.getPosEnd(), nodeToVisit.getPosEnd(), "no such node:(\n" + nodeToVisit.getClass().getSimpleName()));
     }
 
@@ -55,5 +58,20 @@ public class Interpreter {
         val.posStart = node.posStart;
         val.posEnd = node.posEnd;
         return Either.success(val);
+    }
+    public Either visitListNode(Nodes.ListNode node) {
+        ArrayList<Value> elements = new ArrayList<>();
+        Values.List value;
+
+        for (int i = 0; i < node.elements.size(); i++) {
+            Either elementState = visitNode(node.elements.get(i));
+            if (elementState.error()) {
+                return elementState;
+            }
+            elements.add((Value) elementState.getSuccess());
+        }
+        value = new Values.List(elements);
+        Either res = Either.success(value);
+        return res;
     }
 }

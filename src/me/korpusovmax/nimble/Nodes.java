@@ -1,5 +1,7 @@
 package me.korpusovmax.nimble;
 
+import java.util.ArrayList;
+
 public class Nodes {
     public static class AtomNode extends Node {
         public Token token;
@@ -43,6 +45,18 @@ public class Nodes {
         @Override
         public String toString() {
             return "(" + token.toString() + " " + node.toString() + ")";
+        }
+    }
+    public static class ListNode extends Node {
+        public ArrayList<Node> elements;
+        public ListNode(ArrayList<Node> elements) {
+            this.elements = elements;
+            //maybe here (copy)
+            posStart = elements.get(0).getPosStart();
+            posStart.idx = posStart.idx - 2;
+            posStart.advance();
+            //maybe here (copy)
+            posEnd = elements.get(elements.size() - 1).getPosEnd().advance();
         }
     }
 }

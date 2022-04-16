@@ -18,14 +18,67 @@ public class Parser {
         }
         return currentToken;
     }
+    public Token reverse(int cnt) {
+        tokenIndex = tokenIndex - cnt - 1;
+        advance();
+        return currentToken;
+    }
+    public void skipLines() {
+        ParseResult res = new ParseResult();
+        while (currentToken.type == TypeToken.NEWLINE) {
+            res.registerAdvancement();
+            advance();
+        }
+    }
 
     public ParseResult parse() {
-        ParseResult res = _expr();
+        ParseResult res = _statements(true);
         return res;
     }
     //reading nodes
+    public ParseResult _statements(Boolean global) {
+        ParseResult res = new ParseResult();
+        ArrayList<Node> statements = new ArrayList<>();
+
+        skipLines();
+        ParseResult statement = res.register(_expr());
+        if (res.error()) {
+            return res;
+        }
+        statements.add((Node) statement.state.getSuccess());
+        Boolean moreState = true;
+        while (true) {
+            ParseResult local = new ParseResult();
+            while (currentToken.type == TypeToken.NEWLINE) {
+                res.registerAdvancement();
+                advance();
+                moreState = true;
+            }
+            if ((currentToken.type == TypeToken.EOF) || (currentToken.type == TypeToken.RBRACE && !global)) {
+                res.state = Either.success(new Nodes.ListNode(statements));
+                return res;
+            }
+            if (!moreState) {
+                break;
+            }
+            ParseResult statement2 = res.tryRegister(_expr(), res);
+            if (statement2.error()) {
+                reverse(res.reverseCount);
+                moreState = false;
+            } else {
+                statements.add((Node) statement2.state.getSuccess());
+            }
+        }
+        skipLines();
+        res.state = Either.success(new Nodes.ListNode(statements));
+        return res;
+    }
     public ParseResult _expr() {
         ParseResult res = new ParseResult();
+//        if (currentToken.type == TypeToken.ID) {
+//
+//        }
+
         ParseResult left = res.register(_term());
         if (res.state.error()) {
             return res;

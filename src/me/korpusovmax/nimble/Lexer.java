@@ -42,21 +42,25 @@ public class Lexer {
                 tokens.add(new Token(TypeToken.DIV, pos.copy()));
                 advance();
             } else if (currentChar == '*') {
-                tokens.add(new Token(TypeToken.MUL, pos.copy()));
-                advance();
-            } else if (currentChar == '^') {
-                tokens.add(new Token(TypeToken.POW, pos.copy()));
-                advance();
+                tokens.add(_pow());
             } else if (currentChar == '(') {
                 tokens.add(new Token(TypeToken.LPAREN, pos.copy()));
                 advance();
             } else if (currentChar == ')') {
                 tokens.add(new Token(TypeToken.RPAREN, pos.copy()));
                 advance();
-            } else if ("0123456789".contains(String.valueOf(currentChar)) || currentChar == '.') {
+            } else if (currentChar == '.') {
+                tokens.add(new Token(TypeToken.DOT, pos.copy()));
+                advance();
+            } else if (currentChar == '=') {
+                tokens.add(new Token(TypeToken.EQ, pos.copy()));
+                advance();
+            } else if ("0123456789".contains(String.valueOf(currentChar))) {
                 tokens.add(_number());
             } else if (currentChar == '"') {
                 tokens.add(_string());
+            } else if(String.valueOf(currentChar).matches("[A-Za-z_]+")) {
+                tokens.add(_name());
             } else {
                 Position posStart = pos.copy();
                 char ch = currentChar;
@@ -118,5 +122,23 @@ public class Lexer {
         }
         advance();
         return new Token(TypeToken.STRING, string, posStart, pos.copy());
+    }
+    public Token _pow() {
+        Position posStart = pos.copy();
+        advance();
+        if (currentChar == '*') {
+            advance();
+            return new Token(TypeToken.POW, posStart, pos.copy());
+        }
+        return new Token(TypeToken.MUL, posStart, pos.copy());
+    }
+    public Token _name() {
+        Position posStart = pos.copy();
+        String name = "";
+        while (String.valueOf(currentChar).matches("[A-Za-z_]")) {
+            name = name + currentChar;
+            advance();
+        }
+        return new Token(TypeToken.ID, name, posStart, pos.copy());
     }
 }

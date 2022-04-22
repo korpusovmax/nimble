@@ -1,6 +1,8 @@
 package me.korpusovmax.nimble;
 
+import java.lang.reflect.Type;
 import java.util.ArrayList;
+import java.util.Arrays;
 
 public class Parser {
     private ArrayList<Token> tokens;
@@ -75,9 +77,84 @@ public class Parser {
     }
     public ParseResult _expr() {
         ParseResult res = new ParseResult();
-//        if (currentToken.type == TypeToken.ID) {
-//
-//        }
+        if (currentToken.type == TypeToken.ID) {
+            int idx = tokenIndex; //for backward move
+            ParseResult varRes = res.register(_id());
+            if (res.error()) {
+                return res;
+            }
+            Nodes.IdNode var = (Nodes.IdNode) varRes.state.getSuccess();
+            TypeToken type = currentToken.type;
+            Token operation = currentToken.copy();
+            if (type == TypeToken.EQ || type == TypeToken.PE || type == TypeToken.ME) {
+                res.registerAdvancement();
+                advance();
+                ParseResult exprRes = res.register(_expr());
+                if (res.error()) {
+                    return res;
+                }
+                res.state = Either.success(new Nodes.VarAssigmentNode(var, operation, (Node) exprRes.state.getSuccess()));
+                return res;
+            }
+            //backward
+            tokenIndex = idx - 1;
+            res.registerAdvancement();
+            advance();
+        }
+        ParseResult left = res.register(_comparisonExpr());
+        if (res.error()) {
+            return res;
+        }
+        while (currentToken.type == TypeToken.AND || currentToken.type == TypeToken.OR) {
+            Token tok = currentToken.copy();
+            res.registerAdvancement();
+            advance();
+            ParseResult right = res.register(_comparisonExpr());
+            if (res.error()) {
+                return res;
+            }
+            left.state = Either.success(new Nodes.BinOpNode((Node) left.state.getSuccess(), tok, (Node) right.state.getSuccess()));
+        }
+        return res.register(left);
+    }
+    public ParseResult _comparisonExpr() {
+        ParseResult res = new ParseResult();
+        if (currentToken.type == TypeToken.NOT) {
+            Token tok = currentToken.copy();
+            res.registerAdvancement();
+            advance();
+            ParseResult notted = res.register(_comparisonExpr());
+            if (res.error()) {
+                return res;
+            }
+            res.state = Either.success(new Nodes.UnaryOpNode(tok, (Node) notted.state.getSuccess()));
+            return res;
+        }
+        ParseResult left = res.register(_arithExpr());
+        if (res.error()) {
+            return res;
+        }
+        ArrayList<TypeToken> types = new ArrayList<TypeToken>(Arrays.asList(
+                TypeToken.EE,
+                TypeToken.NE,
+                TypeToken.GT,
+                TypeToken.LT,
+                TypeToken.GTE,
+                TypeToken.LTE
+        ));
+        while (types.contains(currentToken.type)){
+            Token tok = currentToken.copy();
+            ParseResult right = res.register(_arithExpr());
+            if (res.error()) {
+                return res;
+            }
+            left.state = Either.success(new Nodes.BinOpNode((Node) left.state.getSuccess(), tok, (Node) right.state.getSuccess()));
+        }
+        res.state = Either.success((Node) left.state.getSuccess());
+        return res;
+    }
+    public ParseResult _arithExpr() {
+        ParseResult res = new ParseResult();
 
         ParseResult left = res.register(_term());
         if (res.state.error()) {
@@ -89,15 +166,6 @@ public class Parser {
             advance();
             ParseResult right = res.register(_term());
             if (right.error()) {
-//                if (res.state.getSuccess() == null) {
-//                    Position start = ((Node) left.state.getSuccess()).getPosStart();
-//                    Position end = ((Node) left.state.getSuccess()).getPosEnd();
-//                    res.state = Either.error(new Errors.InvalidSyntax(start, end, "expected smth bro"));
-//                    return res;
-//                }
-//                if (res.state.error()) {
-//                    return r///
-//                }
                 return res;
             }
             left.state = Either.success(new Nodes.BinOpNode((Node) left.state.getSuccess(), token, (Node) right.state.getSuccess()));
@@ -160,6 +228,13 @@ public class Parser {
     public ParseResult _atom() {
         ParseResult res = new ParseResult();
         TypeToken type = currentToken.type;
+        if (type == TypeToken.ID) {
+            res = res.register(_id());
+            if (res.error()) {
+                return res;
+            }
+            res.state = Either.success(new Nodes.VarAccessNode((Nodes.IdNode) res.state.getSuccess()));
+        }
         if (type == TypeToken.INT || type == TypeToken.FLOAT || type == TypeToken.STRING) {
             Token token = currentToken.copy();
             res.registerAdvancement();
@@ -170,4 +245,32 @@ public class Parser {
         res.state = Either.error(new Errors.InvalidSyntax(currentToken.posStart, currentToken.posEnd, "unexpected " + currentToken.type));
         return res;
     }
+
+    //help-readers
+    public ParseResult _id() {
+        ParseResult res = new ParseResult();
+        ArrayList<Token> names = new ArrayList<>();
+        while (currentToken.type == TypeToken.ID) {
+            names.add(currentToken.copy());
+            res.registerAdvancement();
+            advance();
+            if (currentToken.type == TypeToken.DOT) {
+                res.registerAdvancement();
+                advance();
+                if (currentToken.type == TypeToken.ID) {
+                    continue;
+                }
+                res.state = Either.error(new Errors.InvalidSyntax(currentToken.posStart, currentToken.posEnd, "Expected <id>"));
+                return res;
+            }
+            break;
+        }
+        if (names.size() > 0) {
+            res.state = Either.success(new Nodes.IdNode(names));
+            return res;
+        }
+        res.state = Either.error(new Errors.InvalidSyntax(currentToken.posStart, currentToken.posEnd, "Expected <id>"));
+        return res;
+    }
+    //TODO (maybe) binary node function (for comparison, arith, term, factors)
 }

@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 
 public class Interpreter {
+    public HashMap<String, Value> symbolTable = new HashMap<>();
     public Either visitNode(Node nodeToVisit) {
         try {
             java.lang.reflect.Method method = this.getClass().getMethod("visit" + nodeToVisit.getClass().getSimpleName(), nodeToVisit.getClass());
@@ -13,7 +14,19 @@ public class Interpreter {
         }
         return Either.error(new Errors.RuntimeError(nodeToVisit.getPosEnd(), nodeToVisit.getPosEnd(), "no such node:(\n" + nodeToVisit.getClass().getSimpleName()));
     }
-
+    public Either visitIdNode(Nodes.IdNode node) {
+        Value result;
+        try {
+            result = symbolTable.get(node.names.get(0).value);
+            for (Token i : node.names) {
+                //todo - get result from multiple ids
+                result = symbolTable.get(node.names.get(0).value);
+            }
+        } catch (Exception e) {
+            return Either.error(new Errors.RuntimeError(node.getPosStart(), node.getPosEnd(), "no such name: " + node.toString()));
+        }
+        return Either.success(result);
+    }
     public Either visitAtomNode(Nodes.AtomNode node) {
         if (node.token.type == TypeToken.INT) {
             Values.Integer value = new Values.Integer(Integer.parseInt(node.token.value));
@@ -73,5 +86,8 @@ public class Interpreter {
         value = new Values.List(elements);
         Either res = Either.success(value);
         return res;
+    }
+    public Either visitVarAccessNode(Nodes.VarAccessNode node) {
+        return visitIdNode(node.var);
     }
 }

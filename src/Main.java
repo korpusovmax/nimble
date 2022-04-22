@@ -24,7 +24,9 @@ public class Main {
             } else {
                 System.out.println((Node)r.getSuccess());
                 System.out.println("\nInterpreter:");
-                Either runtimeResult = new Interpreter().visitNode((Node) r.getSuccess());
+                Interpreter inter = new Interpreter();
+                inter.symbolTable.put("pi", new Values.Float(3.1415));
+                Either runtimeResult = inter.visitNode((Node) r.getSuccess());
                 if (runtimeResult.error()) {
                     System.out.println(runtimeResult.getError());
                 } else {

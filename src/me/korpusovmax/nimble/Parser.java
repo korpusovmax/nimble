@@ -227,13 +227,14 @@ public class Parser {
     }
     public ParseResult _atom() {
         ParseResult res = new ParseResult();
-        TypeToken type = currentToken.type;
+        TypeToken type = currentToken.copy().type;
         if (type == TypeToken.ID) {
             res = res.register(_id());
             if (res.error()) {
                 return res;
             }
             res.state = Either.success(new Nodes.VarAccessNode((Nodes.IdNode) res.state.getSuccess()));
+            return res;
         }
         if (type == TypeToken.INT || type == TypeToken.FLOAT || type == TypeToken.STRING) {
             Token token = currentToken.copy();

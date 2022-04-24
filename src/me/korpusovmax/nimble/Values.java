@@ -164,11 +164,8 @@ public class Values {
         }
 
         public Either addedTo(Value val) {
-            if (val instanceof String) {
-                Values.String newValue = new Values.String(value + ((String) val).value);
-                return posedValue(newValue, val);
-            }
-            return Either.error(new Errors.RuntimeError(getPosStart(), val.getPosEnd(), "Illegal Operation"));
+            Values.String newValue = new Values.String(value + val);
+            return posedValue(newValue, val);
         }
 
         public java.lang.String toString() {

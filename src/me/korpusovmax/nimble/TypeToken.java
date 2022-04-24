@@ -21,6 +21,7 @@ public enum TypeToken {
     LSQUARE("'['"),
     RSQUARE("']'"),
     COMA("','"),
+    COLON("':'"),
     DOT("'.'"),
     AND("'&&'"),
     OR("'||'"),

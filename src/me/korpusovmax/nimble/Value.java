@@ -21,6 +21,10 @@ public interface Value {
         return getRTError(val);
     }
 
+    default Either get(String key) {
+        return getRTError(this);
+    }
+
     default Either getRTError(Value val) {
         return Either.error(new Errors.RuntimeError(this.getPosStart(), val.getPosEnd(), "Illegal Operation"));
     }

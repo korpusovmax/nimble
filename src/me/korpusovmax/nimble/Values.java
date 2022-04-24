@@ -1,6 +1,7 @@
 package me.korpusovmax.nimble;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 
 public class Values {
     public static class BaseValue {
@@ -28,6 +29,7 @@ public class Values {
         public Integer (int value) {
             this.value = value;
         }
+
 
         public Either addedTo(Value val) {
             if (val instanceof Values.Integer) {
@@ -64,7 +66,7 @@ public class Values {
         }
         public Either dividedBy(Value val) {
             if (val instanceof Values.Integer) {
-                Values.Float newValue = new Values.Float(value / (double)((Integer)val).value);
+                Values.Float newValue = new Values.Float(value / (float)((Integer)val).value);
                 return posedValue(newValue, val);
             }
             if (val instanceof Values.Float) {
@@ -75,11 +77,11 @@ public class Values {
         }
         public Either powedBy(Value val) {
             if (val instanceof Values.Integer) {
-                Values.Float newValue = new Values.Float(Math.pow(value, ((Integer)val).value));
+                Values.Float newValue = new Values.Float((float) Math.pow(value, ((Integer)val).value));
                 return posedValue(newValue, val);
             }
             if (val instanceof Values.Float) {
-                Values.Float newValue = new Values.Float(Math.pow(value, ((Float)val).value));
+                Values.Float newValue = new Values.Float((float) Math.pow(value, ((Float)val).value));
                 return posedValue(newValue, val);
             }
             return Either.error(new Errors.RuntimeError(getPosStart(), val.getPosEnd(), "Illegal Operation"));
@@ -90,8 +92,8 @@ public class Values {
         }
     }
     public static class Float extends BaseValue implements Value {
-        public double value;
-        public Float (double value) {
+        public float value;
+        public Float (float value) {
             this.value = value;
         }
 
@@ -141,11 +143,11 @@ public class Values {
         }
         public Either powedBy(Value val) {
             if (val instanceof Values.Integer) {
-                Values.Float newValue = new Values.Float(Math.pow(value, ((Integer)val).value));
+                Values.Float newValue = new Values.Float((float) Math.pow(value, ((Integer)val).value));
                 return posedValue(newValue, val);
             }
             if (val instanceof Values.Float) {
-                Values.Float newValue = new Values.Float(Math.pow(value, ((Float)val).value));
+                Values.Float newValue = new Values.Float((float) Math.pow(value, ((Float)val).value));
                 return posedValue(newValue, val);
             }
             return Either.error(new Errors.RuntimeError(getPosStart(), val.getPosEnd(), "Illegal Operation"));
@@ -190,6 +192,37 @@ public class Values {
                 result = result.substring(0, result.length() - 2);
             }
             return result + "]";
+        }
+    }
+    public static class Table extends BaseValue implements Value {
+        public HashMap<java.lang.String, Value> value;
+
+        public Table() {
+            this.value = new HashMap<>();
+        }
+        public Table(HashMap<java.lang.String, Value> map) {
+            value = map;
+        }
+
+        public Either get(java.lang.String key) {
+            try {
+                return Either.success(value.get(key));
+            } catch (Exception e) {
+                return Either.error(new Errors.RuntimeError(this.posStart, this.posEnd, "no such key: " + key));
+            }
+        }
+
+        @Override
+        public java.lang.String toString() {
+            java.lang.String result = "{";
+            java.lang.String[] keys = value.keySet().toArray(java.lang.String[]::new);
+            for (java.lang.String i : keys) {
+                result = result + i.toString() + ": " + value.get(i) + ", ";
+            }
+            if (keys.length > 0) {
+                result = result.substring(0, result.length() - 2);
+            }
+            return result + "}";
         }
     }
 }

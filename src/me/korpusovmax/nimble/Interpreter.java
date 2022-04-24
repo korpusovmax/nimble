@@ -4,7 +4,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 
 public class Interpreter {
-    public HashMap<String, Value> symbolTable = new HashMap<>();
+    public HashMap<String, Value> m = new HashMap<>();
+    public Values.Table symbolTable = new Values.Table(m);
     public Either visitNode(Node nodeToVisit) {
         try {
             java.lang.reflect.Method method = this.getClass().getMethod("visit" + nodeToVisit.getClass().getSimpleName(), nodeToVisit.getClass());
@@ -16,20 +17,32 @@ public class Interpreter {
     }
     public Either visitIdNode(Nodes.IdNode node) {
         Value result;
+        ArrayList<Token> names = new ArrayList<>(node.names);
         try {
-            result = symbolTable.get(node.names.get(0).value);
-            for (Token i : node.names) {
-                //todo - get result from multiple ids
-                result = symbolTable.get(node.names.get(0).value);
+            Either resultState = symbolTable.get(node.names.get(0).value);
+            if (resultState.error()) {
+                return resultState;
+            }
+            result = (Value) resultState.getSuccess();
+            ((Values.BaseValue) result).setPos(node.getPosStart(), node.names.get(0).posEnd);
+            names.remove(0);
+            for (Token i : names) {
+                Either resState = result.get(i.value);
+                if (resState.error()) {
+                    return resState;
+                }
+                result = (Value) resState.getSuccess();
+                ((Values.BaseValue) result).setPos(node.getPosStart(), i.posEnd);
             }
         } catch (Exception e) {
             return Either.error(new Errors.RuntimeError(node.getPosStart(), node.getPosEnd(), "no such name: " + node.toString()));
         }
+        ((Values.BaseValue) result).setPos(node.getPosStart(), node.getPosEnd());
         return Either.success(result);
     }
     public Either visitAtomNode(Nodes.AtomNode node) {
         if (node.token.type == TypeToken.INT) {
-            Values.Integer value = new Values.Integer(Integer.parseInt(node.token.value));
+            Values.Integer value = new Values.Integer(java.lang.Integer.parseInt(node.token.value));
             value.setPos(node.getPosStart(), node.getPosEnd());
             return Either.success(value);
         } else if (node.token.type == TypeToken.FLOAT){

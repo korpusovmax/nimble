@@ -25,9 +25,10 @@ public class Main {
                 System.out.println((Node)r.getSuccess());
                 System.out.println("\nInterpreter:");
                 Interpreter inter = new Interpreter();
-                inter.symbolTable.put("pi", new Values.Float(3.1415));
+                inter.m.put("pi", new Values.Float(3.1415f));
                 Either runtimeResult = inter.visitNode((Node) r.getSuccess());
                 if (runtimeResult.error()) {
+                    System.out.println(((me.korpusovmax.nimble.Error)runtimeResult.getError()).details);
                     System.out.println(runtimeResult.getError());
                 } else {
                     System.out.println(runtimeResult.getSuccess());

@@ -9,5 +9,5 @@ public class Node {
     public Position getPosStart() {
         return posStart;
     }
-
 }
+

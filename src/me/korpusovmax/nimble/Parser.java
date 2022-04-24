@@ -275,3 +275,4 @@ public class Parser {
     }
     //TODO (maybe) binary node function (for comparison, arith, term, factors)
 }
+

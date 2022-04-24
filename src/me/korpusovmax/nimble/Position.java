@@ -28,3 +28,4 @@ public class Position {
         return new Position(idx, ln, col, ftxt);
     }
 }
+

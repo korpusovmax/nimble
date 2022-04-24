@@ -31,3 +31,4 @@ public class Either<TSuccess, TError> {
         return success;
     }
 }
+

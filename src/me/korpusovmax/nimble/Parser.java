@@ -1,6 +1,5 @@
 package me.korpusovmax.nimble;
 
-import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.Arrays;
 
@@ -67,6 +66,8 @@ public class Parser {
             if (statement2.error()) {
                 reverse(res.reverseCount);
                 moreState = false;
+                //stop after error
+                return statement2;
             } else {
                 statements.add((Node) statement2.state.getSuccess());
             }
@@ -227,20 +228,34 @@ public class Parser {
     }
     public ParseResult _atom() {
         ParseResult res = new ParseResult();
+        Boolean dotNum = false;
+        if (currentToken.type == TypeToken.DOT) {
+            dotNum = true;
+            res.registerAdvancement();
+            advance();
+        }
         TypeToken type = currentToken.copy().type;
+        if (type == TypeToken.INT || type == TypeToken.FLOAT || type == TypeToken.STRING) {
+            Token token = currentToken.copy();
+            if (dotNum) {
+                if (type == TypeToken.STRING || type == TypeToken.FLOAT) {
+                    res.state = Either.error(new Errors.InvalidSyntax(currentToken.posStart, currentToken.posEnd, "expected int after '.'"));
+                    return res;
+                }
+                token.value = "0." + token.value;
+                token.type = TypeToken.FLOAT;
+            }
+            res.registerAdvancement();
+            advance();
+            res.state = Either.success(new Nodes.AtomNode(token));
+            return res;
+        }
         if (type == TypeToken.ID) {
             res = res.register(_id());
             if (res.error()) {
                 return res;
             }
             res.state = Either.success(new Nodes.VarAccessNode((Nodes.IdNode) res.state.getSuccess()));
-            return res;
-        }
-        if (type == TypeToken.INT || type == TypeToken.FLOAT || type == TypeToken.STRING) {
-            Token token = currentToken.copy();
-            res.registerAdvancement();
-            advance();
-            res.state = Either.success(new Nodes.AtomNode(token));
             return res;
         }
         res.state = Either.error(new Errors.InvalidSyntax(currentToken.posStart, currentToken.posEnd, "unexpected " + currentToken.type));

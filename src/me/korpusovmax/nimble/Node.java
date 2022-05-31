@@ -3,11 +3,9 @@ package me.korpusovmax.nimble;
 public class Node {
     public Position posStart, posEnd;
 
-    public Position getPosEnd() {
-        return posEnd;
-    }
-    public Position getPosStart() {
-        return posStart;
+    public void setPos(Position posStart, Position posEnd) {
+        this.posStart = posStart;
+        this.posEnd = posEnd;
     }
 }
 

@@ -2,10 +2,14 @@ package me.korpusovmax.nimble;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.function.Function;
 
 public class Values {
     public static class BaseValue {
-        public Position posStart, posEnd;
+        private java.lang.String type;
+        public HashMap<java.lang.String, Function> fields;
+        private Position posStart, posEnd;
+
         public void setPos(Position posStart, Position posEnd) {
             this.posStart = posStart;
             this.posEnd = posEnd;
@@ -14,7 +18,6 @@ public class Values {
         public Position getPosStart() {
             return posStart;
         }
-
         public Position getPosEnd() {
             return posEnd;
         }
@@ -23,15 +26,28 @@ public class Values {
             nw.setPos(getPosStart(), val.getPosEnd());
             return Either.success(nw);
         }
+
+        public void setType(java.lang.String type) {
+            this.type = type;
+        }
+        public java.lang.String getType() {
+            return type;
+        }
     }
     public static class Integer extends BaseValue implements Value {
         public int value;
         public Integer (int value) {
             this.value = value;
+            setType("Integer");
+            fields = new HashMap<>();
+
+            Function<Value, Either> f = x -> posedValue(
+                    new Values.Integer(value + ((Values.Integer) x).value
+                    ), x);
+            fields.put(TypeToken.PLUS.name, f);
         }
-
-
-        public Either addedTo(Value val) {
+        //old code:
+        /*public Either addedTo(Value val) {
             if (val instanceof Values.Integer) {
                 Values.Integer newValue = new Values.Integer(value + ((Integer)val).value);
                 return posedValue(newValue, val);
@@ -85,7 +101,7 @@ public class Values {
                 return posedValue(newValue, val);
             }
             return Either.error(new Errors.RuntimeError(getPosStart(), val.getPosEnd(), "Illegal Operation"));
-        }
+        }*/
 
         public java.lang.String toString() {
             return "" + value;
@@ -95,6 +111,7 @@ public class Values {
         public float value;
         public Float (float value) {
             this.value = value;
+            setType("Float");
         }
 
         public Either addedTo(Value val) {
@@ -161,6 +178,7 @@ public class Values {
         public java.lang.String value;
         public String(java.lang.String value) {
             this.value = value;
+            setType("String");
         }
 
         public Either addedTo(Value val) {
@@ -177,6 +195,7 @@ public class Values {
 
         public List(ArrayList<Value> elements) {
             this.elements = elements;
+            setType("List");
         }
 
         @Override
@@ -196,6 +215,7 @@ public class Values {
 
         public Table() {
             this.value = new HashMap<>();
+            setType("Table");
         }
         public Table(HashMap<java.lang.String, Value> map) {
             value = map;
@@ -205,7 +225,7 @@ public class Values {
             try {
                 return Either.success(value.get(key));
             } catch (Exception e) {
-                return Either.error(new Errors.RuntimeError(this.posStart, this.posEnd, "no such key: " + key));
+                return Either.error(new Errors.RuntimeError(getPosStart(), getPosEnd(), "no such key: " + key));
             }
         }
 

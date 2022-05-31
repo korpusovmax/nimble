@@ -2,6 +2,7 @@ package me.korpusovmax.nimble;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.function.Function;
 
 public class Interpreter {
     public HashMap<String, Value> m = new HashMap<>();
@@ -13,7 +14,7 @@ public class Interpreter {
         } catch (Exception e) {
             //System.out.println(e.toString());
         }
-        return Either.error(new Errors.RuntimeError(nodeToVisit.getPosEnd(), nodeToVisit.getPosEnd(), "no such node:(\n" + nodeToVisit.getClass().getSimpleName()));
+        return Either.error(new Errors.RuntimeError(nodeToVisit.posStart, nodeToVisit.posEnd, "no such node:(\n" + nodeToVisit.getClass().getSimpleName()));
     }
     public Either visitIdNode(Nodes.IdNode node) {
         Value result;
@@ -24,7 +25,7 @@ public class Interpreter {
                 return resultState;
             }
             result = (Value) resultState.getSuccess();
-            ((Values.BaseValue) result).setPos(node.getPosStart(), node.names.get(0).posEnd);
+            ((Values.BaseValue) result).setPos(node.posStart, node.names.get(0).posEnd);
             names.remove(0);
             for (Token i : names) {
                 Either resState = result.get(i.value);
@@ -32,37 +33,35 @@ public class Interpreter {
                     return resState;
                 }
                 result = (Value) resState.getSuccess();
-                ((Values.BaseValue) result).setPos(node.getPosStart(), i.posEnd);
+                ((Values.BaseValue) result).setPos(node.posStart, i.posEnd);
             }
         } catch (Exception e) {
-            return Either.error(new Errors.RuntimeError(node.getPosStart(), node.getPosEnd(), "no such name: " + node.toString()));
+            return Either.error(new Errors.RuntimeError(node.posStart, node.posEnd, "no such name: " + node.toString()));
         }
-        ((Values.BaseValue) result).setPos(node.getPosStart(), node.getPosEnd());
+        ((Values.BaseValue) result).setPos(node.posStart, node.posEnd);
         return Either.success(result);
     }
     public Either visitAtomNode(Nodes.AtomNode node) {
-        if (node.token.type == TypeToken.INT) {
-            Values.Integer value = new Values.Integer(java.lang.Integer.parseInt(node.token.value));
-            value.setPos(node.getPosStart(), node.getPosEnd());
-            return Either.success(value);
-        } else if (node.token.type == TypeToken.FLOAT){
-            Values.Float value = new Values.Float((float) Double.parseDouble(node.token.value));
-            value.setPos(node.getPosStart(), node.getPosEnd());
-            return Either.success(value);
-        } else {
-            Values.String value = new Values.String((node.token.value).toString());
-            value.setPos(node.getPosStart(), node.getPosEnd());
-            return Either.success(value);
+        try {
+            if (node.token.type == TypeToken.INT) {
+                Values.Integer value = new Values.Integer(java.lang.Integer.parseInt(node.token.value));
+                value.setPos(node.posStart, node.posEnd);
+                return Either.success(value);
+            } else if (node.token.type == TypeToken.FLOAT) {
+                Values.Float value = new Values.Float((float) Double.parseDouble(node.token.value));
+                value.setPos(node.posStart, node.posEnd);
+                return Either.success(value);
+            } else {
+                Values.String value = new Values.String((node.token.value).toString());
+                value.setPos(node.posStart, node.posEnd);
+                return Either.success(value);
+            }
+        } catch (Exception e) {
+            System.out.println(e.toString());
         }
+        return Either.success(new Values.Integer(0));
     }
     public Either visitBinOpNode(Nodes.BinOpNode node) {
-        HashMap<String, String> funcs = new HashMap<>();
-        funcs.put(TypeToken.PLUS.name, "addedTo");
-        funcs.put(TypeToken.MINUS.name, "subbedBy");
-        funcs.put(TypeToken.MUL.name, "multedBy");
-        funcs.put(TypeToken.DIV.name, "dividedBy");
-        funcs.put(TypeToken.POW.name, "powedBy");
-
         Either leftState = visitNode(node.leftNode);
         if (leftState.error()) {
             return leftState;
@@ -74,15 +73,17 @@ public class Interpreter {
 
         Either result = null;
         try {
-            java.lang.reflect.Method method = leftState.getSuccess().getClass().getMethod(funcs.get(node.operation.type.name), Value.class);
-            result = (Either) method.invoke(leftState.getSuccess(), rightState.getSuccess());
+            //old code:
+            //java.lang.reflect.Method method = leftState.getSuccess().getClass().getMethod(funcs.get(node.operation.type.name), Value.class);
+            //result = (Either) method.invoke(leftState.getSuccess(), rightState.getSuccess());
+            //new:
+            result = (Either) ((Values.BaseValue) leftState.getSuccess()).fields.get(node.operation.type.name).apply(rightState.getSuccess());
         } catch (Exception e) {}
         if (result.error()) {
             return result;
         }
         Values.BaseValue val = (Values.BaseValue) result.getSuccess();
-        val.posStart = node.posStart;
-        val.posEnd = node.posEnd;
+        val.setPos(node.posStart, node.posEnd);
         return Either.success(val);
     }
     public Either visitListNode(Nodes.ListNode node) {
